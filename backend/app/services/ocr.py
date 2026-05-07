@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -43,66 +44,72 @@ def _render_pdf_pages(path: str) -> list[Image.Image]:
     pdf = pdfium.PdfDocument(path)
     images: list[Image.Image] = []
     max_pages = min(len(pdf), settings.max_pdf_pages)
+
     for page_index in range(max_pages):
         page = pdf[page_index]
         bitmap = page.render(scale=2.0).to_pil()
         images.append(bitmap.convert("RGB"))
+
     return images
 
 
 def _load_images(path: str) -> list[Image.Image]:
     suffix = Path(path).suffix.lower()
+
     if suffix == ".pdf":
         return _render_pdf_pages(path)
+
     if suffix in {".png", ".jpg", ".jpeg"}:
         return [Image.open(path).convert("RGB")]
+
     return []
 
 
-def _response_text(response: Any) -> str:
-    if hasattr(response, "output_text") and response.output_text:
-        return response.output_text
-    parts: list[str] = []
-    for item in getattr(response, "output", []) or []:
-        for content in getattr(item, "content", []) or []:
-            text = getattr(content, "text", None)
-            if text:
-                parts.append(text)
-    return "\n".join(parts)
+def _extract_json(text: str) -> dict[str, Any]:
+    """
+    Safely extract JSON even if the model returns markdown code blocks.
+    """
+    text = text.strip()
+
+    if text.startswith("```"):
+        text = re.sub(r"^```json", "", text, flags=re.IGNORECASE).strip()
+        text = re.sub(r"^```", "", text).strip()
+        text = re.sub(r"```$", "", text).strip()
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", text, flags=re.DOTALL)
+        if match:
+            return json.loads(match.group(0))
+        raise
 
 
-OCR_JSON_SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "page_text": {"type": "string"},
-        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-        "detected_handwriting": {"type": "boolean"},
-        "patient_name": {"type": "string"},
-        "medical_condition": {"type": "string"},
-        "incident_date": {"type": "string"},
-        "hospital_location": {"type": "string"},
-        "severity_level": {"type": "string", "enum": ["Low", "Medium", "High", "Critical", "Unknown"]},
-        "doctor_notes": {"type": "string"},
-        "lab_test_details": {"type": "string"},
-        "evidence_type": {"type": "string"},
-        "warnings": {"type": "array", "items": {"type": "string"}},
-    },
-    "required": [
-        "page_text",
-        "confidence",
-        "detected_handwriting",
-        "patient_name",
-        "medical_condition",
-        "incident_date",
-        "hospital_location",
-        "severity_level",
-        "doctor_notes",
-        "lab_test_details",
-        "evidence_type",
-        "warnings",
-    ],
-}
+def _chat_response_text(response: Any) -> str:
+    """
+    Works with OpenAI chat.completions.create response.
+    """
+    try:
+        return response.choices[0].message.content or ""
+    except Exception:
+        return ""
+
+
+def _normalize_ocr_data(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "page_text": str(data.get("page_text", "")),
+        "confidence": float(data.get("confidence", 0.0) or 0.0),
+        "detected_handwriting": bool(data.get("detected_handwriting", False)),
+        "patient_name": str(data.get("patient_name", "")),
+        "medical_condition": str(data.get("medical_condition", "")),
+        "incident_date": str(data.get("incident_date", "")),
+        "hospital_location": str(data.get("hospital_location", "")),
+        "severity_level": str(data.get("severity_level", "Unknown") or "Unknown"),
+        "doctor_notes": str(data.get("doctor_notes", "")),
+        "lab_test_details": str(data.get("lab_test_details", "")),
+        "evidence_type": str(data.get("evidence_type", "")),
+        "warnings": data.get("warnings", []) if isinstance(data.get("warnings", []), list) else [],
+    }
 
 
 class AiOcrService:
@@ -111,6 +118,7 @@ class AiOcrService:
 
     def process_document(self, file_path: str) -> DocumentOcrResult:
         suffix = Path(file_path).suffix.lower()
+
         if suffix == ".txt":
             text = Path(file_path).read_text(encoding="utf-8", errors="ignore")
             page = PageOcrResult(
@@ -120,9 +128,15 @@ class AiOcrService:
                 fields={"evidence_type": "typed text"},
                 warnings=[],
             )
-            return DocumentOcrResult(full_text=text, average_confidence=1.0, pages=[page], metadata={"source": "text"})
+            return DocumentOcrResult(
+                full_text=text,
+                average_confidence=1.0,
+                pages=[page],
+                metadata={"source": "text"},
+            )
 
         images = _load_images(file_path)
+
         if not images:
             raise ValueError("No readable pages/images found in uploaded file.")
 
@@ -130,12 +144,23 @@ class AiOcrService:
             raise RuntimeError("OPENAI_API_KEY is required for AI OCR on images and PDFs.")
 
         page_results: list[PageOcrResult] = []
+
         for index, image in enumerate(images, start=1):
             page_results.append(self._process_page(image=image, page_number=index))
 
-        full_text = "\n\n".join(f"[Page {p.page_number}]\n{p.page_text}" for p in page_results if p.page_text)
-        confidence_values = [p.confidence for p in page_results]
-        average_confidence = sum(confidence_values) / len(confidence_values) if confidence_values else 0.0
+        full_text = "\n\n".join(
+            f"[Page {page.page_number}]\n{page.page_text}"
+            for page in page_results
+            if page.page_text
+        )
+
+        confidence_values = [page.confidence for page in page_results]
+        average_confidence = (
+            sum(confidence_values) / len(confidence_values)
+            if confidence_values
+            else 0.0
+        )
+
         return DocumentOcrResult(
             full_text=full_text,
             average_confidence=average_confidence,
@@ -143,58 +168,97 @@ class AiOcrService:
             metadata={
                 "source": "ai_vision_ocr",
                 "page_count": len(page_results),
-                "warnings": [warning for page in page_results for warning in page.warnings],
+                "warnings": [
+                    warning
+                    for page in page_results
+                    for warning in page.warnings
+                ],
             },
         )
 
     def _process_page(self, image: Image.Image, page_number: int) -> PageOcrResult:
         data_url = _image_to_data_url(image)
-        prompt = (
-            "You are an AI medical investigation document understanding system. "
-            "Extract readable text and meaningful investigation information from this page. "
-            "Handle handwriting, low-quality scans, tables, stamps, and mixed layouts. "
-            "Do not invent missing data. Use empty strings for unavailable fields. "
-            "Return a confidence from 0 to 1 and warnings for uncertain extraction."
-        )
-        response = self.client.responses.create(
+
+        system_prompt = """
+You are an AI medical investigation document understanding system.
+
+Your task:
+1. Read the uploaded medical investigation page.
+2. Extract all readable text.
+3. Understand document structure.
+4. Handle handwriting, low-quality scans, mixed layouts, tables, stamps, and notes.
+5. Extract meaningful medical investigation information.
+6. Do not guess missing values.
+
+Return ONLY valid JSON with this exact structure:
+{
+  "page_text": "",
+  "confidence": 0.0,
+  "detected_handwriting": false,
+  "patient_name": "",
+  "medical_condition": "",
+  "incident_date": "",
+  "hospital_location": "",
+  "severity_level": "Unknown",
+  "doctor_notes": "",
+  "lab_test_details": "",
+  "evidence_type": "",
+  "warnings": []
+}
+
+Rules:
+- confidence must be between 0 and 1.
+- severity_level must be one of: Low, Medium, High, Critical, Unknown.
+- Use empty string for unavailable fields.
+- Add warnings for unclear handwriting, low-quality images, missing fields, or uncertain extraction.
+""".strip()
+
+        response = self.client.chat.completions.create(
             model=settings.openai_vision_model,
-            input=[
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a careful AI OCR and medical document extraction assistant.",
+                },
                 {
                     "role": "user",
                     "content": [
-                        {"type": "input_text", "text": prompt},
-                        {"type": "input_image", "image_url": data_url},
+                        {"type": "text", "text": system_prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": data_url,
+                                "detail": "high",
+                            },
+                        },
                     ],
-                }
+                },
             ],
-            text={
-                "format": {
-                    "type": "json_schema",
-                    "name": "medical_ocr_page",
-                    "strict": True,
-                    "schema": OCR_JSON_SCHEMA,
-                }
-            },
+            response_format={"type": "json_object"},
+            temperature=0,
         )
-        raw = _response_text(response)
-        data = json.loads(raw)
+
+        raw = _chat_response_text(response)
+        data = _normalize_ocr_data(_extract_json(raw))
+
         fields = {
-            "patient_name": data.get("patient_name", ""),
-            "medical_condition": data.get("medical_condition", ""),
-            "incident_date": data.get("incident_date", ""),
-            "hospital_location": data.get("hospital_location", ""),
-            "severity_level": data.get("severity_level", "Unknown"),
-            "doctor_notes": data.get("doctor_notes", ""),
-            "lab_test_details": data.get("lab_test_details", ""),
-            "evidence_type": data.get("evidence_type", ""),
+            "patient_name": data["patient_name"],
+            "medical_condition": data["medical_condition"],
+            "incident_date": data["incident_date"],
+            "hospital_location": data["hospital_location"],
+            "severity_level": data["severity_level"],
+            "doctor_notes": data["doctor_notes"],
+            "lab_test_details": data["lab_test_details"],
+            "evidence_type": data["evidence_type"],
         }
+
         return PageOcrResult(
             page_number=page_number,
-            page_text=data.get("page_text", ""),
-            confidence=float(data.get("confidence") or 0.0),
-            detected_handwriting=bool(data.get("detected_handwriting")),
+            page_text=data["page_text"],
+            confidence=data["confidence"],
+            detected_handwriting=data["detected_handwriting"],
             fields=fields,
-            warnings=data.get("warnings", []),
+            warnings=data["warnings"],
         )
 
 

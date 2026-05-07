@@ -17,9 +17,19 @@ class InvestigationAssistantService:
         top_k: int = 5,
         filters: dict | None = None,
     ) -> AssistantResponse:
-        results = hybrid_search(db=db, query_text=question, limit=top_k, filters=filters)
+        results = hybrid_search(
+            db=db,
+            query_text=question,
+            limit=top_k,
+            filters=filters,
+        )
+
         if not results:
-            return AssistantResponse(answer="No supporting evidence found.", citations=[], retrieved_results=[])
+            return AssistantResponse(
+                answer="No supporting evidence found.",
+                citations=[],
+                retrieved_results=[],
+            )
 
         citations = [
             Citation(
@@ -36,43 +46,83 @@ class InvestigationAssistantService:
 
         if not self.client:
             answer = self._fallback_answer(question, citations)
-            return AssistantResponse(answer=answer, citations=citations, retrieved_results=results)
+            return AssistantResponse(
+                answer=answer,
+                citations=citations,
+                retrieved_results=results,
+            )
 
         context = "\n\n".join(
-            f"[{citation.source_id}] File: {citation.original_filename} | "
-            f"Investigation: {citation.investigation_id} | Chunk: {citation.chunk_index} | "
-            f"Page: {citation.source_page or 'unknown'}\n{result.content}"
+            f"[{citation.source_id}] "
+            f"File: {citation.original_filename} | "
+            f"Investigation: {citation.investigation_id} | "
+            f"Chunk: {citation.chunk_index} | "
+            f"Page: {citation.source_page or 'unknown'}\n"
+            f"{result.content}"
             for citation, result in zip(citations, results)
         )
+
         prompt = f"""
 You are an AI investigation assistant for medical investigation evidence.
+
 Answer the user's question using ONLY the retrieved evidence below.
+
 Rules:
 1. If the answer is not supported, return exactly: No supporting evidence found.
 2. Do not use outside knowledge.
 3. Cite every factual claim with source IDs like [S1] or [S2].
 4. Be concise and investigation-focused.
+5. Never invent patient names, hospitals, dates, severity levels, or diagnoses.
 
-Question: {question}
+Question:
+{question}
 
 Retrieved evidence:
 {context}
 """.strip()
-        response = self.client.responses.create(model=settings.openai_text_model, input=prompt)
-        answer = getattr(response, "output_text", "").strip()
+
+        response = self.client.chat.completions.create(
+            model=settings.openai_text_model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You answer only from retrieved evidence and always provide citations.",
+                },
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+            temperature=0,
+        )
+
+        answer = response.choices[0].message.content or ""
+        answer = answer.strip()
+
         if not answer:
             answer = "No supporting evidence found."
-        return AssistantResponse(answer=answer, citations=citations, retrieved_results=results)
+
+        return AssistantResponse(
+            answer=answer,
+            citations=citations,
+            retrieved_results=results,
+        )
 
     @staticmethod
     def _fallback_answer(question: str, citations: list[Citation]) -> str:
         if not citations:
             return "No supporting evidence found."
-        joined = "\n".join(f"[{c.source_id}] {c.excerpt}" for c in citations)
+
+        joined = "\n".join(
+            f"[{citation.source_id}] {citation.excerpt}"
+            for citation in citations
+        )
+
         return (
             "OPENAI_API_KEY is not configured, so I cannot generate a final AI response. "
             "Retrieved supporting evidence is shown below.\n\n"
-            f"Question: {question}\n\n{joined}"
+            f"Question: {question}\n\n"
+            f"{joined}"
         )
 
 
