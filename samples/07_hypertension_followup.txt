@@ -1,0 +1,34 @@
+FOLLOW-UP MEDICAL INVESTIGATION FORM
+
+Patient Name: Ayesha Nazeer
+Medical Record No: HTN-TRI-2026-144
+Date: 15 Jun 2026
+Hospital / Location: Trincomalee Base Hospital
+
+Reason for Investigation:
+Blood pressure follow-up and cardiovascular risk review.
+
+Medical Condition:
+Hypertension
+
+Severity Level:
+Medium
+
+Clinical Measurements:
+Blood Pressure Reading 1: 158/96 mmHg
+Blood Pressure Reading 2: 152/94 mmHg
+Pulse Rate: 84 bpm
+BMI: 29.4
+
+Lab/Test Details:
+ECG: No acute ischemic changes
+Serum Cholesterol: 224 mg/dL
+Fasting Blood Sugar: 112 mg/dL
+
+Doctor Notes:
+Blood pressure remains above target level. Patient advised to reduce salt intake and improve medication adherence. Review again in one month.
+
+Summary:
+Medium severity hypertension follow-up investigation from Trincomalee Base Hospital.
+
+Synthetic sample record only - no real patient data.
