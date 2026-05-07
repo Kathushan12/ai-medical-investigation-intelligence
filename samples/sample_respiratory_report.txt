@@ -1,0 +1,9 @@
+Medical Investigation Report
+Patient Name: Amal Perera
+Date: 18 Jan 2026
+Hospital / Location: Kandy General Hospital
+Medical Condition: Respiratory infection
+Severity Level: Medium
+Lab/Test Details: Chest X-ray shows mild inflammation. Blood count indicates possible infection.
+Doctor Notes: Patient has cough and fever for five days. Prescribed antibiotics and advised rest.
+Summary: Medium-risk respiratory infection investigation from Kandy.

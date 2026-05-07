@@ -1,0 +1,9 @@
+Medical Investigation Report
+Patient Name: John Silva
+Date: 12 Jan 2026
+Hospital / Location: Colombo National Hospital
+Medical Condition: Diabetes
+Severity Level: High
+Lab/Test Details: Blood test evidence shows fasting blood sugar level above normal range. HbA1c indicates poor glucose control.
+Doctor Notes: Patient reports increased thirst, frequent urination, and fatigue. Recommend urgent diabetic management plan and follow-up review.
+Summary: High-risk diabetes investigation from Colombo requiring continued monitoring.
