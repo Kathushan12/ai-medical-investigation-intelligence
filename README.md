@@ -1,196 +1,151 @@
 # AI-Powered Medical Investigation Report Intelligence System
 
-This repository is a production-oriented starter implementation for the **AI Internship Task Assignment**.
+A production-oriented AI internship project for building a **Medical Investigation Report Intelligence System** using AI OCR, structured extraction, embeddings, PostgreSQL + pgvector, hybrid search, and a Retrieval-Augmented Generation (RAG) assistant.
 
-## What this system does
+This system is designed to process medical investigation evidence such as scanned reports, images, PDFs, and typed documents, extract meaningful medical information, store searchable investigation records, and answer investigation questions using retrieved evidence with citations.
 
-- Uploads investigation evidence: images, scanned documents, PDFs, and text samples.
-- Uses AI-powered document understanding for OCR instead of relying only on traditional OCR.
-- Extracts structured fields such as patient name, condition, hospital/location, severity, doctor notes, and lab/test details.
-- Chunks investigation text and stores embeddings in PostgreSQL with pgvector.
-- Supports keyword search, semantic search, and hybrid search.
-- Provides a grounded AI assistant that answers only from retrieved evidence and returns citations.
-- Tracks upload, OCR, embedding, and processing statuses.
-- Includes Docker, API documentation, database schema, architecture notes, sample files, and daily report templates.
+---
 
-## Tech stack
+## Project Objective
 
-Backend: FastAPI, SQLAlchemy, PostgreSQL, pgvector, OpenAI API, pypdfium2, Pillow  
-Frontend: Next.js, React, TypeScript, Tailwind CSS  
-Deployment: Docker and Docker Compose
+The objective of this project is to demonstrate practical knowledge in:
 
-## Repository structure
+- AI-powered OCR
+- Medical document understanding
+- Structured data extraction
+- Embeddings and semantic search
+- PostgreSQL + pgvector
+- Retrieval-Augmented Generation
+- FastAPI backend architecture
+- Database design
+- Background processing
+- AI workflow automation
+- Clean architecture
+- Scalable system design
+- Docker-based deployment
+- Professional documentation and GitHub workflow
+
+The main focus of this project is not only UI development, but also:
+
+- AI reasoning
+- Retrieval quality
+- System architecture
+- Engineering maturity
+- Real-world AI problem solving
+
+---
+
+## What This System Does
+
+The system supports the following complete workflow:
+
+1. Upload investigation evidence.
+2. Store the uploaded file safely.
+3. Create an investigation record in PostgreSQL.
+4. Run AI-powered OCR in the background.
+5. Extract structured medical investigation fields.
+6. Preprocess and chunk extracted text.
+7. Generate embeddings for each text chunk.
+8. Store embeddings in PostgreSQL using pgvector.
+9. Support keyword search using PostgreSQL full-text search.
+10. Support semantic search using vector similarity.
+11. Support hybrid search by combining keyword and semantic relevance.
+12. Provide an AI assistant using RAG.
+13. Return grounded AI answers with citations.
+14. Track upload, OCR, embedding, and processing statuses.
+
+---
+
+## Supported Evidence Types
+
+The system supports uploading:
+
+- PDF files
+- Scanned medical documents
+- PNG images
+- JPG/JPEG images
+- Typed text reports
+
+Supported file examples:
 
 ```text
-.
-├── backend/
-│   ├── app/
-│   │   ├── api/routes/          # FastAPI endpoints
-│   │   ├── services/            # OCR, extraction, embedding, RAG, search
-│   │   ├── config.py
-│   │   ├── database.py
-│   │   ├── main.py
-│   │   ├── models.py
-│   │   └── schemas.py
-│   ├── storage/uploads/
-│   ├── tests/
-│   ├── Dockerfile
-│   └── requirements.txt
-├── frontend/
-├── docs/
-├── samples/
-├── docker-compose.yml
-└── .env.example
+.pdf
+.png
+.jpg
+.jpeg
+.txt
 ```
 
-## Day 1 setup
+## Key Features
 
-```bash
-git init
-git add .
-git commit -m "day 1: initialize medical investigation intelligence system"
+### AI-Powered OCR
 
-cp .env.example .env
-# Edit .env and add your OPENAI_API_KEY
+The system uses AI-based document understanding instead of relying only on traditional OCR. This helps process:
 
-docker compose up --build
+- Scanned reports
+- Low-quality images
+- Handwritten notes
+- Mixed document layouts
+- Medical investigation documents
+- Tables and notes inside reports
+
+### Structured Data Extraction
+
+The system automatically extracts important fields such as:
+
+- Patient name
+- Medical condition
+- Incident date
+- Hospital or location
+- Severity level
+- Doctor notes
+- Lab/test details
+- Summary
+- Confidence score
+- Warnings
+
+### Background Processing
+
+OCR and embedding generation run in the background. The system tracks:
+
+- Upload status
+- OCR status
+- Embedding status
+- Processing status
+
+## High-Level Architecture
+
 ```
-
-Open:
-
-- Frontend: http://localhost:3000
-- Backend health: http://localhost:8000/health
-- API docs: http://localhost:8000/docs
-
-## Useful API commands
-
-Upload a sample report:
-
-```bash
-curl -X POST "http://localhost:8000/api/v1/investigations/upload" \
-  -F "file=@samples/sample_lab_report.txt"
+User / Investigator
+        |
+        v
+Frontend - Next.js, React, TypeScript, Tailwind CSS
+        |
+        v
+Backend API - FastAPI
+        |
+        |-----------------------------|
+        |                             |
+        v                             v
+Investigation APIs              AI Assistant APIs
+Upload / Status / List          RAG Question Answering
+        |
+        v
+Background Processing Pipeline
+        |
+        |--> AI OCR
+        |--> Structured Extraction
+        |--> Text Chunking
+        |--> Embedding Generation
+        |--> Store in PostgreSQL + pgvector
+        |
+        v
+Retrieval System
+        |
+        |--> Keyword Search
+        |--> Semantic Search
+        |--> Hybrid Search
+        |
+        v
+Grounded AI Answer with Citations
 ```
-
-List investigations:
-
-```bash
-curl "http://localhost:8000/api/v1/investigations"
-```
-
-Hybrid search:
-
-```bash
-curl "http://localhost:8000/api/v1/search/hybrid?q=high-risk%20diabetes%20Colombo&limit=5"
-```
-
-Ask the AI assistant:
-
-```bash
-curl -X POST "http://localhost:8000/api/v1/assistant/query" \
-  -H "Content-Type: application/json" \
-  -d '{"question":"Show high-risk incidents in Colombo","top_k":5}'
-```
-
-## Seven-day GitHub plan
-
-### Day 1 - Project setup and architecture
-
-- Create GitHub repository.
-- Add Docker Compose, FastAPI skeleton, PostgreSQL + pgvector.
-- Add architecture, schema, and design decision docs.
-- Push commit:
-
-```bash
-git add .
-git commit -m "day 1: setup architecture fastapi postgres pgvector docker"
-git push origin main
-```
-
-### Day 2 - Upload and investigation management
-
-- Implement upload API.
-- Save evidence files safely.
-- Create investigation records.
-- Add status tracking fields.
-- Push commit:
-
-```bash
-git add .
-git commit -m "day 2: add evidence upload and investigation management apis"
-git push origin main
-```
-
-### Day 3 - AI OCR and structured extraction
-
-- Add PDF-to-image conversion.
-- Add AI vision OCR.
-- Add structured extraction JSON schema.
-- Store extracted text and metadata.
-- Push commit:
-
-```bash
-git add .
-git commit -m "day 3: implement ai ocr and structured medical extraction"
-git push origin main
-```
-
-### Day 4 - Chunking, embeddings, and pgvector storage
-
-- Preprocess and chunk extracted text.
-- Generate embeddings.
-- Store chunks in PostgreSQL vector columns.
-- Add vector index.
-- Push commit:
-
-```bash
-git add .
-git commit -m "day 4: add chunking embeddings and pgvector persistence"
-git push origin main
-```
-
-### Day 5 - Search and related investigation detection
-
-- Add PostgreSQL full-text keyword search.
-- Add semantic vector search.
-- Add hybrid search.
-- Add related investigation detection.
-- Push commit:
-
-```bash
-git add .
-git commit -m "day 5: implement keyword semantic hybrid search and related detection"
-git push origin main
-```
-
-### Day 6 - RAG assistant and frontend
-
-- Add grounded AI assistant with citations.
-- Add hallucination prevention fallback.
-- Build upload/search/assistant UI.
-- Push commit:
-
-```bash
-git add .
-git commit -m "day 6: add rag assistant citations and frontend ui"
-git push origin main
-```
-
-### Day 7 - Testing, documentation, and final cleanup
-
-- Add tests.
-- Update README.
-- Add API documentation, DB schema, architecture diagram, design decisions, and day report.
-- Final push:
-
-```bash
-git add .
-git commit -m "day 7: finalize documentation tests and deployment setup"
-git push origin main
-```
-
-## Important notes for evaluation
-
-- Do not submit only screenshots. The repository must run with Docker.
-- Keep daily commits visible on GitHub.
-- Add screenshots or short screen recordings only as extra proof, not as the main deliverable.
-- Use sample files only for testing. Do not upload real patient data.
