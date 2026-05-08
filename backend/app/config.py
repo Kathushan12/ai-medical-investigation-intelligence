@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     chunk_overlap: int = 150
     cors_origins: str = "http://localhost:3000"
 
+    min_ocr_confidence: float = 0.65
+    blur_threshold: float = 80.0
+    enable_image_preprocessing: bool = True
+
     @property
     def cors_origin_list(self) -> List[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
