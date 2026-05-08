@@ -54,11 +54,19 @@ function StatCard({
   description: string;
 }) {
   return (
-    <div className="rounded-3xl border border-white/70 bg-white/80 p-5 shadow-sm backdrop-blur">
+    <div className="rounded-3xl border border-white/70 bg-white/80 p-5 shadow-sm backdrop-blur transition hover:-translate-y-0.5 hover:shadow-md">
       <p className="text-sm font-medium text-slate-500">{label}</p>
       <p className="mt-2 text-3xl font-bold text-slate-950">{value}</p>
       <p className="mt-1 text-sm text-slate-500">{description}</p>
     </div>
+  );
+}
+
+function FeaturePill({ label }: { label: string }) {
+  return (
+    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700 ring-1 ring-slate-200">
+      {label}
+    </span>
   );
 }
 
@@ -120,6 +128,11 @@ export default function Home() {
     [investigations]
   );
 
+  const reviewCount = useMemo(
+    () => investigations.filter((item) => item.review_required).length,
+    [investigations]
+  );
+
   async function handleUpload() {
     if (!file) {
       setMessage("Please select a file before uploading.");
@@ -131,7 +144,7 @@ export default function Home() {
 
     try {
       await uploadInvestigation(file);
-      setMessage("File uploaded successfully. AI processing has started.");
+      setMessage("File uploaded successfully. Processing has started.");
       setFile(null);
       await refresh();
     } catch (error) {
@@ -185,10 +198,10 @@ export default function Home() {
   return (
     <main className="min-h-screen px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl space-y-8">
-        <section className="overflow-hidden rounded-[2rem] border border-white/70 bg-white/80 shadow-xl shadow-slate-200/70 backdrop-blur">
+        <section className="overflow-hidden rounded-[2rem] border border-white/70 bg-white/85 shadow-xl shadow-slate-200/70 backdrop-blur">
           <div className="relative p-8 sm:p-10 lg:p-12">
             <div className="absolute right-8 top-8 hidden rounded-full bg-blue-100 px-4 py-2 text-sm font-semibold text-blue-700 ring-1 ring-blue-200 lg:block">
-              AI + OCR + RAG + pgvector
+              Medical Document Intelligence
             </div>
 
             <div className="max-w-3xl">
@@ -197,13 +210,13 @@ export default function Home() {
               </div>
 
               <h1 className="mt-6 text-4xl font-black tracking-tight text-slate-950 sm:text-5xl lg:text-6xl">
-                AI-Powered Medical Report Intelligence System
+                Professional Medical Report Intelligence System
               </h1>
 
               <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">
-                Upload medical investigation evidence, extract structured fields using
-                AI OCR, generate embeddings, perform hybrid retrieval, and ask grounded
-                AI questions with citations.
+                Upload investigation documents, extract medical details, track
+                document quality, search reports, and ask evidence-based questions
+                with clear citations.
               </p>
 
               <div className="mt-8 flex flex-wrap gap-3">
@@ -218,7 +231,7 @@ export default function Home() {
                   href="#assistant"
                   className="rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-bold text-slate-800 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50"
                 >
-                  Ask AI Assistant
+                  Ask Assistant
                 </a>
 
                 <a
@@ -241,36 +254,36 @@ export default function Home() {
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
-            label="Total Investigations"
+            label="Total Records"
             value={investigations.length}
-            description="Uploaded medical evidence files"
+            description="Uploaded investigation files"
           />
 
           <StatCard
             label="Completed"
             value={completedCount}
-            description="OCR and embeddings completed"
+            description="Ready for search and assistant use"
           />
 
           <StatCard
             label="Processing"
             value={processingCount}
-            description="Background AI pipeline running"
+            description="Currently being analyzed"
           />
 
           <StatCard
-            label="Failed"
-            value={failedCount}
-            description="Needs review or retry"
+            label="Review Needed"
+            value={reviewCount || failedCount}
+            description="Low confidence or failed records"
           />
         </section>
 
-        <section className="grid gap-8 lg:grid-cols-[1fr_1fr]" id="upload">
-          <div className="rounded-[2rem] border border-white/70 bg-white/85 p-6 shadow-lg shadow-slate-200/70 backdrop-blur">
+        <section className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr]" id="upload">
+          <div className="rounded-[2rem] border border-white/70 bg-white/90 p-6 shadow-lg shadow-slate-200/70 backdrop-blur">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-sm font-bold uppercase tracking-wide text-blue-600">
-                  Step 01
+                  Upload Center
                 </p>
 
                 <h2 className="mt-2 text-2xl font-black text-slate-950">
@@ -278,9 +291,9 @@ export default function Home() {
                 </h2>
 
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Upload PDFs, images, scanned documents, or text reports. The
-                  backend starts AI OCR, structured extraction, chunking, and
-                  embedding generation.
+                  Add PDFs, scanned images, camera captures, or text reports. The
+                  system will process them and show status, confidence, and review
+                  information in the records table.
                 </p>
               </div>
 
@@ -289,7 +302,7 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="mt-6 rounded-3xl border-2 border-dashed border-slate-200 bg-slate-50/70 p-6 text-center transition hover:border-blue-300 hover:bg-blue-50/40">
+            <div className="mt-6 rounded-3xl border-2 border-dashed border-slate-200 bg-slate-50/80 p-6 text-center transition hover:border-blue-300 hover:bg-blue-50/50">
               <input
                 className="block w-full cursor-pointer rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-700 file:mr-4 file:rounded-xl file:border-0 file:bg-slate-950 file:px-4 file:py-2 file:text-sm file:font-bold file:text-white"
                 type="file"
@@ -313,37 +326,65 @@ export default function Home() {
               disabled={!file || loading}
               className="mt-5 w-full rounded-2xl bg-slate-950 px-5 py-4 text-sm font-black text-white shadow-lg shadow-slate-300 transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {loading ? "Processing..." : "Upload and Start AI Processing"}
+              {loading ? "Processing..." : "Upload Document"}
             </button>
           </div>
 
-          <div className="rounded-[2rem] border border-white/70 bg-slate-950 p-6 text-white shadow-lg shadow-slate-300 backdrop-blur">
-            <p className="text-sm font-bold uppercase tracking-wide text-blue-300">
-              AI Workflow
-            </p>
+          <div className="rounded-[2rem] border border-white/70 bg-white/90 p-6 shadow-lg shadow-slate-200/70 backdrop-blur">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-bold uppercase tracking-wide text-blue-600">
+                  Quality Review
+                </p>
 
-            <h2 className="mt-2 text-2xl font-black">How the pipeline works</h2>
+                <h2 className="mt-2 text-2xl font-black text-slate-950">
+                  Supported Evidence & Review Checks
+                </h2>
 
-            <div className="mt-6 space-y-4">
-              {[
-                "Upload file and create investigation record",
-                "Run AI OCR for scanned documents and images",
-                "Extract patient, condition, date, location, severity and notes",
-                "Chunk the extracted text into retrieval-friendly sections",
-                "Generate embeddings and store vectors in PostgreSQL + pgvector",
-                "Use hybrid search and RAG assistant with citations",
-              ].map((item, index) => (
-                <div
-                  key={item}
-                  className="flex gap-4 rounded-2xl bg-white/10 p-4 ring-1 ring-white/10"
-                >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-400 text-sm font-black text-slate-950">
-                    {index + 1}
-                  </div>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  The interface highlights confidence, image quality, processing
+                  progress, and human review requirements for each investigation.
+                </p>
+              </div>
 
-                  <p className="text-sm leading-6 text-slate-100">{item}</p>
+              <div className="rounded-2xl bg-emerald-50 p-4 text-2xl ring-1 ring-emerald-100">
+                ✅
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-3">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm font-black text-slate-950">
+                  Accepted document types
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <FeaturePill label="PDF" />
+                  <FeaturePill label="Scanned Image" />
+                  <FeaturePill label="Camera Image" />
+                  <FeaturePill label="Text Report" />
                 </div>
-              ))}
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm font-black text-slate-950">
+                  Review indicators
+                </p>
+                <div className="mt-3 space-y-2 text-sm text-slate-600">
+                  <p>• OCR confidence is shown under each file.</p>
+                  <p>• Document quality score is shown when available.</p>
+                  <p>• Low-confidence records are marked for review.</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+                <p className="text-sm font-black text-blue-800">
+                  Current system status
+                </p>
+                <p className="mt-2 text-sm text-blue-700">
+                  {investigations.length} total records · {completedCount} completed ·{" "}
+                  {reviewCount} need review
+                </p>
+              </div>
             </div>
           </div>
         </section>
@@ -352,18 +393,18 @@ export default function Home() {
           className="grid gap-8 lg:grid-cols-[0.95fr_1.05fr]"
           id="assistant"
         >
-          <div className="rounded-[2rem] border border-white/70 bg-white/85 p-6 shadow-lg shadow-slate-200/70 backdrop-blur">
+          <div className="rounded-[2rem] border border-white/70 bg-white/90 p-6 shadow-lg shadow-slate-200/70 backdrop-blur">
             <p className="text-sm font-bold uppercase tracking-wide text-blue-600">
-              Step 02
+              Assistant
             </p>
 
             <h2 className="mt-2 text-2xl font-black text-slate-950">
-              Ask AI Investigation Assistant
+              Ask Investigation Questions
             </h2>
 
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              The assistant uses retrieved evidence only. If no evidence is
-              available, it should return “No supporting evidence found.”
+              Ask questions about uploaded reports. Answers are generated using
+              available evidence and citations.
             </p>
 
             <textarea
@@ -382,7 +423,7 @@ export default function Home() {
             </button>
           </div>
 
-          <div className="rounded-[2rem] border border-white/70 bg-white/85 p-6 shadow-lg shadow-slate-200/70 backdrop-blur">
+          <div className="rounded-[2rem] border border-white/70 bg-white/90 p-6 shadow-lg shadow-slate-200/70 backdrop-blur">
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm font-bold uppercase tracking-wide text-blue-600">
@@ -390,12 +431,12 @@ export default function Home() {
                 </p>
 
                 <h2 className="mt-2 text-2xl font-black text-slate-950">
-                  Grounded Answer
+                  Evidence-Based Answer
                 </h2>
               </div>
 
               <div className="rounded-2xl bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-700 ring-1 ring-emerald-100">
-                RAG Enabled
+                Citations Enabled
               </div>
             </div>
 
@@ -435,20 +476,20 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="rounded-[2rem] border border-white/70 bg-white/85 p-6 shadow-lg shadow-slate-200/70 backdrop-blur">
+        <section className="rounded-[2rem] border border-white/70 bg-white/90 p-6 shadow-lg shadow-slate-200/70 backdrop-blur">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="text-sm font-bold uppercase tracking-wide text-blue-600">
-                Step 03
+                Search
               </p>
 
               <h2 className="mt-2 text-2xl font-black text-slate-950">
-                Hybrid Investigation Search
+                Investigation Search
               </h2>
 
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                Hybrid search combines PostgreSQL full-text keyword search with
-                embedding-based semantic similarity.
+                Search uploaded reports by condition, patient details, hospital,
+                severity, or investigation content.
               </p>
             </div>
 
@@ -513,11 +554,11 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="rounded-[2rem] border border-white/70 bg-white/85 p-6 shadow-lg shadow-slate-200/70 backdrop-blur">
+        <section className="rounded-[2rem] border border-white/70 bg-white/90 p-6 shadow-lg shadow-slate-200/70 backdrop-blur">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-bold uppercase tracking-wide text-blue-600">
-                Step 04
+                Records
               </p>
 
               <h2 className="mt-2 text-2xl font-black text-slate-950">
@@ -525,7 +566,7 @@ export default function Home() {
               </h2>
 
               <p className="mt-2 text-sm text-slate-600">
-                Track upload, OCR, embedding, processing, and human review progress.
+                Track upload, OCR, embedding, processing, and review status.
               </p>
             </div>
 
