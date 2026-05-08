@@ -1,5 +1,5 @@
 "use client";
-
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import {
   askAssistant,
@@ -205,8 +205,16 @@ export default function Home() {
             </div>
 
             <div className="max-w-3xl">
-              <div className="inline-flex items-center rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm">
-                Medical Investigation Intelligence Platform
+              <div className="inline-flex items-center gap-3 rounded-full bg-white px-4 py-2 text-sm font-bold text-slate-900 shadow-sm ring-1 ring-slate-200">
+                <Image
+                  src="/logo-icon.png"
+                  alt="Medical Investigation Intelligence Logo"
+                  width={34}
+                  height={34}
+                  className="rounded-full"
+                  priority
+                />
+                <span>Medical Investigation Intelligence Platform</span>
               </div>
 
               <h1 className="mt-6 text-4xl font-black tracking-tight text-slate-950 sm:text-5xl lg:text-6xl">
