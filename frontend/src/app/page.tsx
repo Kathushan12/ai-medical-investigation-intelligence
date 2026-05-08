@@ -69,7 +69,9 @@ export default function Home() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [question, setQuestion] = useState("Show high-risk incidents in Colombo");
   const [assistantAnswer, setAssistantAnswer] = useState("");
-  const [assistantCitations, setAssistantCitations] = useState<AssistantCitation[]>([]);
+  const [assistantCitations, setAssistantCitations] = useState<
+    AssistantCitation[]
+  >([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -94,7 +96,9 @@ export default function Home() {
   }, []);
 
   const completedCount = useMemo(
-    () => investigations.filter((item) => item.processing_status === "completed").length,
+    () =>
+      investigations.filter((item) => item.processing_status === "completed")
+        .length,
     [investigations]
   );
 
@@ -110,7 +114,9 @@ export default function Home() {
   );
 
   const failedCount = useMemo(
-    () => investigations.filter((item) => item.processing_status === "failed").length,
+    () =>
+      investigations.filter((item) => item.processing_status === "failed")
+        .length,
     [investigations]
   );
 
@@ -266,12 +272,15 @@ export default function Home() {
                 <p className="text-sm font-bold uppercase tracking-wide text-blue-600">
                   Step 01
                 </p>
+
                 <h2 className="mt-2 text-2xl font-black text-slate-950">
                   Upload Investigation Evidence
                 </h2>
+
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Upload PDFs, images, scanned documents, or text reports. The backend
-                  starts AI OCR, structured extraction, chunking, and embedding generation.
+                  Upload PDFs, images, scanned documents, or text reports. The
+                  backend starts AI OCR, structured extraction, chunking, and
+                  embedding generation.
                 </p>
               </div>
 
@@ -324,10 +333,14 @@ export default function Home() {
                 "Generate embeddings and store vectors in PostgreSQL + pgvector",
                 "Use hybrid search and RAG assistant with citations",
               ].map((item, index) => (
-                <div key={item} className="flex gap-4 rounded-2xl bg-white/10 p-4 ring-1 ring-white/10">
+                <div
+                  key={item}
+                  className="flex gap-4 rounded-2xl bg-white/10 p-4 ring-1 ring-white/10"
+                >
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-400 text-sm font-black text-slate-950">
                     {index + 1}
                   </div>
+
                   <p className="text-sm leading-6 text-slate-100">{item}</p>
                 </div>
               ))}
@@ -335,7 +348,10 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="grid gap-8 lg:grid-cols-[0.95fr_1.05fr]" id="assistant">
+        <section
+          className="grid gap-8 lg:grid-cols-[0.95fr_1.05fr]"
+          id="assistant"
+        >
           <div className="rounded-[2rem] border border-white/70 bg-white/85 p-6 shadow-lg shadow-slate-200/70 backdrop-blur">
             <p className="text-sm font-bold uppercase tracking-wide text-blue-600">
               Step 02
@@ -346,8 +362,8 @@ export default function Home() {
             </h2>
 
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              The assistant uses retrieved evidence only. If no evidence is available,
-              it should return “No supporting evidence found.”
+              The assistant uses retrieved evidence only. If no evidence is
+              available, it should return “No supporting evidence found.”
             </p>
 
             <textarea
@@ -372,6 +388,7 @@ export default function Home() {
                 <p className="text-sm font-bold uppercase tracking-wide text-blue-600">
                   Assistant Response
                 </p>
+
                 <h2 className="mt-2 text-2xl font-black text-slate-950">
                   Grounded Answer
                 </h2>
@@ -508,7 +525,7 @@ export default function Home() {
               </h2>
 
               <p className="mt-2 text-sm text-slate-600">
-                Track upload, OCR, embedding, and processing progress.
+                Track upload, OCR, embedding, processing, and human review progress.
               </p>
             </div>
 
@@ -522,7 +539,7 @@ export default function Home() {
 
           <div className="mt-6 overflow-hidden rounded-3xl border border-slate-200 bg-white">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] text-left text-sm">
+              <table className="w-full min-w-[1180px] text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="p-4">File</th>
@@ -533,13 +550,14 @@ export default function Home() {
                     <th className="p-4">OCR</th>
                     <th className="p-4">Embedding</th>
                     <th className="p-4">Processing</th>
+                    <th className="p-4">Review</th>
                   </tr>
                 </thead>
 
                 <tbody>
                   {investigations.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="p-8 text-center text-slate-500">
+                      <td colSpan={9} className="p-8 text-center text-slate-500">
                         No investigations uploaded yet.
                       </td>
                     </tr>
@@ -553,6 +571,23 @@ export default function Home() {
                           <p className="font-bold text-slate-950">
                             {item.original_filename}
                           </p>
+
+                          {item.document_quality_score !== null &&
+                            item.document_quality_score !== undefined && (
+                              <p className="mt-1 text-xs text-slate-500">
+                                Quality:{" "}
+                                {Number(item.document_quality_score).toFixed(2)}
+                              </p>
+                            )}
+
+                          {item.ocr_confidence !== null &&
+                            item.ocr_confidence !== undefined && (
+                              <p className="mt-1 text-xs text-slate-500">
+                                OCR confidence:{" "}
+                                {Number(item.ocr_confidence).toFixed(2)}
+                              </p>
+                            )}
+
                           {item.error_message && (
                             <p className="mt-1 text-xs text-red-600">
                               {item.error_message}
@@ -588,6 +623,26 @@ export default function Home() {
 
                         <td className="p-4">
                           <StatusBadge value={item.processing_status} />
+                        </td>
+
+                        <td className="p-4">
+                          {item.review_required ? (
+                            <div>
+                              <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700 ring-1 ring-red-100">
+                                Review Required
+                              </span>
+
+                              {item.review_reason && (
+                                <p className="mt-2 max-w-xs text-xs leading-5 text-red-600">
+                                  {item.review_reason}
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-100">
+                              No Review
+                            </span>
+                          )}
                         </td>
                       </tr>
                     ))

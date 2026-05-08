@@ -11,6 +11,7 @@ from openai import OpenAI
 from PIL import Image
 
 from app.config import settings
+from app.services.image_preprocessing import preprocess_for_ocr
 
 
 @dataclass
@@ -21,6 +22,7 @@ class PageOcrResult:
     detected_handwriting: bool = False
     fields: dict[str, Any] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -66,9 +68,6 @@ def _load_images(path: str) -> list[Image.Image]:
 
 
 def _extract_json(text: str) -> dict[str, Any]:
-    """
-    Safely extract JSON even if the model returns markdown code blocks.
-    """
     text = text.strip()
 
     if text.startswith("```"):
@@ -86,30 +85,57 @@ def _extract_json(text: str) -> dict[str, Any]:
 
 
 def _chat_response_text(response: Any) -> str:
-    """
-    Works with OpenAI chat.completions.create response.
-    """
     try:
         return response.choices[0].message.content or ""
     except Exception:
         return ""
 
 
+def _safe_severity(value: Any) -> str:
+    severity = str(value or "Unknown").strip()
+
+    if severity not in {"Low", "Medium", "High", "Critical", "Unknown"}:
+        return "Unknown"
+
+    return severity
+
+
 def _normalize_ocr_data(data: dict[str, Any]) -> dict[str, Any]:
+    warnings = data.get("warnings", [])
+
+    if not isinstance(warnings, list):
+        warnings = [str(warnings)]
+
+    try:
+        confidence = float(data.get("confidence", 0.0) or 0.0)
+    except Exception:
+        confidence = 0.0
+
+    confidence = max(0.0, min(1.0, confidence))
+
     return {
         "page_text": str(data.get("page_text", "")),
-        "confidence": float(data.get("confidence", 0.0) or 0.0),
+        "confidence": confidence,
         "detected_handwriting": bool(data.get("detected_handwriting", False)),
         "patient_name": str(data.get("patient_name", "")),
         "medical_condition": str(data.get("medical_condition", "")),
         "incident_date": str(data.get("incident_date", "")),
         "hospital_location": str(data.get("hospital_location", "")),
-        "severity_level": str(data.get("severity_level", "Unknown") or "Unknown"),
+        "severity_level": _safe_severity(data.get("severity_level")),
         "doctor_notes": str(data.get("doctor_notes", "")),
         "lab_test_details": str(data.get("lab_test_details", "")),
         "evidence_type": str(data.get("evidence_type", "")),
-        "warnings": data.get("warnings", []) if isinstance(data.get("warnings", []), list) else [],
+        "warnings": warnings,
     }
+
+
+def _combine_confidence(ai_confidence: float, image_quality_score: float) -> float:
+    """
+    Final confidence combines model confidence and image quality.
+    AI confidence is more important, but poor camera image quality should reduce final confidence.
+    """
+    combined = (ai_confidence * 0.75) + (image_quality_score * 0.25)
+    return round(max(0.0, min(1.0, combined)), 3)
 
 
 class AiOcrService:
@@ -127,12 +153,24 @@ class AiOcrService:
                 confidence=1.0,
                 fields={"evidence_type": "typed text"},
                 warnings=[],
+                metadata={
+                    "source": "text",
+                    "quality_score": 1.0,
+                    "blur_score": None,
+                    "review_required": False,
+                },
             )
+
             return DocumentOcrResult(
                 full_text=text,
                 average_confidence=1.0,
                 pages=[page],
-                metadata={"source": "text"},
+                metadata={
+                    "source": "text",
+                    "warnings": [],
+                    "review_required": False,
+                    "quality_score": 1.0,
+                },
             )
 
         images = _load_images(file_path)
@@ -161,32 +199,82 @@ class AiOcrService:
             else 0.0
         )
 
+        all_warnings = [
+            warning
+            for page in page_results
+            for warning in page.warnings
+        ]
+
+        quality_scores = [
+            float(page.metadata.get("quality_score", 0.0))
+            for page in page_results
+        ]
+
+        average_quality_score = (
+            sum(quality_scores) / len(quality_scores)
+            if quality_scores
+            else 0.0
+        )
+
+        review_required = (
+            average_confidence < settings.min_ocr_confidence
+            or any(page.metadata.get("review_required") for page in page_results)
+        )
+
+        if review_required:
+            all_warnings.append(
+                f"Human review recommended. Average OCR confidence={average_confidence:.2f}, threshold={settings.min_ocr_confidence:.2f}."
+            )
+
         return DocumentOcrResult(
             full_text=full_text,
-            average_confidence=average_confidence,
+            average_confidence=round(average_confidence, 3),
             pages=page_results,
             metadata={
                 "source": "ai_vision_ocr",
                 "page_count": len(page_results),
-                "warnings": [
-                    warning
-                    for page in page_results
-                    for warning in page.warnings
-                ],
+                "warnings": all_warnings,
+                "review_required": review_required,
+                "average_quality_score": round(average_quality_score, 3),
+                "min_ocr_confidence": settings.min_ocr_confidence,
             },
         )
 
     def _process_page(self, image: Image.Image, page_number: int) -> PageOcrResult:
-        data_url = _image_to_data_url(image)
+        preprocessing_warnings: list[str] = []
+        preprocessing_metadata: dict[str, Any] = {}
 
-        system_prompt = """
+        if settings.enable_image_preprocessing:
+            preprocess_result = preprocess_for_ocr(
+                image=image,
+                page_number=page_number,
+                blur_threshold=settings.blur_threshold,
+            )
+
+            image_for_ocr = preprocess_result.image
+            preprocessing_warnings = preprocess_result.warnings
+            preprocessing_metadata = preprocess_result.metadata
+        else:
+            image_for_ocr = image
+            preprocessing_metadata = {
+                "page_number": page_number,
+                "quality_score": 1.0,
+                "final_blur_score": None,
+                "was_cropped": False,
+                "was_deskewed": False,
+                "deskew_angle": 0.0,
+            }
+
+        data_url = _image_to_data_url(image_for_ocr)
+
+        prompt = """
 You are an AI medical investigation document understanding system.
 
 Your task:
 1. Read the uploaded medical investigation page.
 2. Extract all readable text.
-3. Understand document structure.
-4. Handle handwriting, low-quality scans, mixed layouts, tables, stamps, and notes.
+3. Understand the document structure.
+4. Handle handwriting, low-quality scans, mixed layouts, tables, stamps, and doctor notes.
 5. Extract meaningful medical investigation information.
 6. Do not guess missing values.
 
@@ -210,7 +298,8 @@ Rules:
 - confidence must be between 0 and 1.
 - severity_level must be one of: Low, Medium, High, Critical, Unknown.
 - Use empty string for unavailable fields.
-- Add warnings for unclear handwriting, low-quality images, missing fields, or uncertain extraction.
+- Add warnings for unclear handwriting, low-quality image, missing fields, or uncertain extraction.
+- Never invent patient names, diagnoses, hospitals, dates, or lab results.
 """.strip()
 
         response = self.client.chat.completions.create(
@@ -223,7 +312,7 @@ Rules:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": system_prompt},
+                        {"type": "text", "text": prompt},
                         {
                             "type": "image_url",
                             "image_url": {
@@ -241,6 +330,23 @@ Rules:
         raw = _chat_response_text(response)
         data = _normalize_ocr_data(_extract_json(raw))
 
+        quality_score = float(preprocessing_metadata.get("quality_score", 1.0))
+        combined_confidence = _combine_confidence(
+            ai_confidence=data["confidence"],
+            image_quality_score=quality_score,
+        )
+
+        warnings = []
+        warnings.extend(preprocessing_warnings)
+        warnings.extend(data["warnings"])
+
+        review_required = combined_confidence < settings.min_ocr_confidence
+
+        if review_required:
+            warnings.append(
+                f"Low OCR confidence on page {page_number}. Final confidence={combined_confidence:.2f}, threshold={settings.min_ocr_confidence:.2f}."
+            )
+
         fields = {
             "patient_name": data["patient_name"],
             "medical_condition": data["medical_condition"],
@@ -252,13 +358,22 @@ Rules:
             "evidence_type": data["evidence_type"],
         }
 
+        metadata = {
+            **preprocessing_metadata,
+            "ai_confidence": data["confidence"],
+            "final_confidence": combined_confidence,
+            "review_required": review_required,
+            "detected_handwriting": data["detected_handwriting"],
+        }
+
         return PageOcrResult(
             page_number=page_number,
             page_text=data["page_text"],
-            confidence=data["confidence"],
+            confidence=combined_confidence,
             detected_handwriting=data["detected_handwriting"],
             fields=fields,
-            warnings=data["warnings"],
+            warnings=warnings,
+            metadata=metadata,
         )
 
 
