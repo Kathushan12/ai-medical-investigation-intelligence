@@ -229,7 +229,30 @@ def process_investigation(db: Session, investigation_id: uuid.UUID) -> None:
         # ---------------------------------------------------------
         chunks = chunk_text(ocr_result.full_text)
 
+        retrieval_header = f"""
+        Investigation File: {investigation.original_filename}
+        Patient Name: {investigation.patient_name or ""}
+        Medical Condition: {investigation.medical_condition or ""}
+        Incident Date: {investigation.incident_date or ""}
+        Hospital / Location: {investigation.hospital_location or ""}
+        Severity Level: {investigation.severity_level or ""}
+        Doctor Notes: {investigation.doctor_notes or ""}
+        Lab/Test Details: {investigation.lab_test_details or ""}
+        Summary: {investigation.summary or ""}
+
+        OCR Extracted Text:
+        {ocr_result.full_text or ""}
+        """.strip()
+
+        chunks = chunk_text(retrieval_header)
+
+        if not chunks:
+            chunks = [retrieval_header]
+
         for index, content in enumerate(chunks):
+            if not content.strip():
+                continue
+
             embedding = embedding_service.embed_text(content)
 
             db.add(

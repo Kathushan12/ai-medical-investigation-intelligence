@@ -1,24 +1,53 @@
+# Environment files / secrets
+.env
+*.env
+.env.*
+!.env.example
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.production.local
+
 # Python
 __pycache__/
 *.py[cod]
-.env
 .venv/
+venv/
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
 
-# Storage
+# Backend storage uploads
 backend/storage/uploads/*
 !backend/storage/uploads/.gitkeep
 
-# Node
+# Node / Next.js
 node_modules/
+frontend/node_modules/
 .next/
+frontend/.next/
 out/
+frontend/out/
+dist/
+frontend/dist/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Docker / local database
+postgres_data/
+*.db
+*.sqlite
+*.sqlite3
 
 # OS / IDE
 .DS_Store
+Thumbs.db
 .vscode/
 .idea/
 
-# Reports
+# Reports / coverage
 coverage/
+htmlcov/

@@ -136,7 +136,7 @@ export async function askAssistant(
     },
     body: JSON.stringify({
       question,
-      top_k: 5,
+      top_k: 15,
     }),
   });
 

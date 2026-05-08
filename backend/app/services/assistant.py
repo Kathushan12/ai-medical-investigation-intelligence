@@ -2,6 +2,7 @@ from openai import OpenAI
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.models import Investigation
 from app.schemas import AssistantResponse, Citation
 from app.services.search import hybrid_search
 
@@ -17,6 +18,14 @@ class InvestigationAssistantService:
         top_k: int = 5,
         filters: dict | None = None,
     ) -> AssistantResponse:
+        normalized_question = question.lower().strip()
+
+        if self._is_list_all_patients_question(normalized_question):
+            return self._list_all_patients(db)
+
+        if self._is_list_all_investigations_question(normalized_question):
+            return self._list_all_investigations(db)
+
         results = hybrid_search(
             db=db,
             query_text=question,
@@ -106,6 +115,120 @@ Retrieved evidence:
             answer=answer,
             citations=citations,
             retrieved_results=results,
+        )
+
+    @staticmethod
+    def _is_list_all_patients_question(question: str) -> bool:
+        patterns = [
+            "list all patients",
+            "show all patients",
+            "all patients",
+            "patient list",
+            "list patients",
+            "show patients",
+            "what are the patients",
+            "who are the patients",
+        ]
+
+        return any(pattern in question for pattern in patterns)
+
+    @staticmethod
+    def _is_list_all_investigations_question(question: str) -> bool:
+        patterns = [
+            "list all investigations",
+            "show all investigations",
+            "all investigations",
+            "list all reports",
+            "show all reports",
+            "all reports",
+            "list all records",
+            "show all records",
+        ]
+
+        return any(pattern in question for pattern in patterns)
+
+    @staticmethod
+    def _list_all_patients(db: Session) -> AssistantResponse:
+        investigations = (
+            db.query(Investigation)
+            .order_by(Investigation.created_at.desc())
+            .all()
+        )
+
+        if not investigations:
+            return AssistantResponse(
+                answer="No patient records found.",
+                citations=[],
+                retrieved_results=[],
+            )
+
+        lines = ["Patient records found in the system:\n"]
+
+        for index, investigation in enumerate(investigations, start=1):
+            patient_name = investigation.patient_name or "Unknown patient"
+            condition = investigation.medical_condition or "Condition not available"
+            location = investigation.hospital_location or "Location not available"
+            severity = investigation.severity_level or "Unknown"
+            filename = investigation.original_filename or "Unknown file"
+            status = investigation.processing_status or "Unknown"
+
+            lines.append(
+                f"{index}. {patient_name} | "
+                f"Condition: {condition} | "
+                f"Location: {location} | "
+                f"Severity: {severity} | "
+                f"Status: {status} | "
+                f"Source file: {filename}"
+            )
+
+        answer = "\n".join(lines)
+
+        return AssistantResponse(
+            answer=answer,
+            citations=[],
+            retrieved_results=[],
+        )
+
+    @staticmethod
+    def _list_all_investigations(db: Session) -> AssistantResponse:
+        investigations = (
+            db.query(Investigation)
+            .order_by(Investigation.created_at.desc())
+            .all()
+        )
+
+        if not investigations:
+            return AssistantResponse(
+                answer="No investigation records found.",
+                citations=[],
+                retrieved_results=[],
+            )
+
+        lines = ["Investigation records found in the system:\n"]
+
+        for index, investigation in enumerate(investigations, start=1):
+            filename = investigation.original_filename or "Unknown file"
+            patient_name = investigation.patient_name or "Unknown patient"
+            condition = investigation.medical_condition or "Condition not available"
+            location = investigation.hospital_location or "Location not available"
+            severity = investigation.severity_level or "Unknown"
+            status = investigation.processing_status or "Unknown"
+
+            lines.append(
+                f"{index}. {filename} | "
+                f"Patient: {patient_name} | "
+                f"Condition: {condition} | "
+                f"Location: {location} | "
+                f"Severity: {severity} | "
+                f"Status: {status}"
+            )
+
+        answer = "\n".join(lines)
+
+        return AssistantResponse(
+            answer=answer,
+            citations=[],
+            retrieved_results=[],
         )
 
     @staticmethod

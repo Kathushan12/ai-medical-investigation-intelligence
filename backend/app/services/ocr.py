@@ -33,6 +33,102 @@ class DocumentOcrResult:
     metadata: dict[str, Any]
 
 
+FIELD_ALIASES = {
+    "patient_name": [
+        "Patient Name",
+        "Patient",
+        "Pt Name",
+        "Name",
+    ],
+    "medical_condition": [
+        "Medical Condition",
+        "Condition",
+        "Diagnosis",
+        "Suspected Medical Condition",
+        "Main Complaint",
+    ],
+    "incident_date": [
+        "Date",
+        "Date of Investigation",
+        "Investigation Date",
+        "Report Date",
+    ],
+    "hospital_location": [
+        "Hospital / Location",
+        "Hospital",
+        "Location",
+        "Place",
+        "Facility",
+    ],
+    "severity_level": [
+        "Severity Level",
+        "Severity",
+        "Risk Level",
+    ],
+    "doctor_notes": [
+        "Doctor Notes",
+        "Doctor Note",
+        "Clinical Notes",
+        "Doctor Remarks",
+    ],
+    "lab_test_details": [
+        "Lab/Test Details",
+        "Lab Test Details",
+        "Test Details",
+        "Investigation Details",
+        "Test Results",
+        "Examination",
+        "Radiology Findings",
+        "Peak Flow",
+        "Oxygen Sat",
+        "Resp. Rate",
+        "Blood Pressure",
+        "Troponin I",
+    ],
+}
+
+
+STOP_LABELS = [
+    "Patient Name",
+    "Patient",
+    "Patient ID",
+    "Pt Name",
+    "Name",
+    "Date",
+    "Date of Investigation",
+    "Investigation Date",
+    "Report Date",
+    "Hospital / Location",
+    "Hospital",
+    "Location",
+    "Place",
+    "Facility",
+    "Condition",
+    "Medical Condition",
+    "Diagnosis",
+    "Severity",
+    "Severity Level",
+    "Risk Level",
+    "Oxygen Sat",
+    "Oxygen Sat.",
+    "Examination",
+    "Radiology Findings",
+    "Lab/Test Details",
+    "Lab Test Details",
+    "Doctor Notes",
+    "Doctor Note",
+    "Summary",
+    "Investigation Summary",
+    "Treatment Advice",
+    "Recommended Action",
+    "Unit",
+    "Blood Pressure",
+    "Troponin I",
+    "Peak Flow",
+    "Resp. Rate",
+]
+
+
 def _image_to_data_url(image: Image.Image, image_format: str = "PNG") -> str:
     image = image.convert("RGB")
     buffer = io.BytesIO()
@@ -94,10 +190,16 @@ def _chat_response_text(response: Any) -> str:
 def _safe_severity(value: Any) -> str:
     severity = str(value or "Unknown").strip()
 
-    if severity not in {"Low", "Medium", "High", "Critical", "Unknown"}:
-        return "Unknown"
+    severity_map = {
+        "low": "Low",
+        "medium": "Medium",
+        "moderate": "Medium",
+        "high": "High",
+        "critical": "Critical",
+        "unknown": "Unknown",
+    }
 
-    return severity
+    return severity_map.get(severity.lower(), "Unknown")
 
 
 def _normalize_ocr_data(data: dict[str, Any]) -> dict[str, Any]:
@@ -117,25 +219,207 @@ def _normalize_ocr_data(data: dict[str, Any]) -> dict[str, Any]:
         "page_text": str(data.get("page_text", "")),
         "confidence": confidence,
         "detected_handwriting": bool(data.get("detected_handwriting", False)),
-        "patient_name": str(data.get("patient_name", "")),
-        "medical_condition": str(data.get("medical_condition", "")),
-        "incident_date": str(data.get("incident_date", "")),
-        "hospital_location": str(data.get("hospital_location", "")),
+        "patient_name": str(data.get("patient_name", "")).strip(),
+        "medical_condition": str(data.get("medical_condition", "")).strip(),
+        "incident_date": str(data.get("incident_date", "")).strip(),
+        "hospital_location": str(data.get("hospital_location", "")).strip(),
         "severity_level": _safe_severity(data.get("severity_level")),
-        "doctor_notes": str(data.get("doctor_notes", "")),
-        "lab_test_details": str(data.get("lab_test_details", "")),
-        "evidence_type": str(data.get("evidence_type", "")),
+        "doctor_notes": str(data.get("doctor_notes", "")).strip(),
+        "lab_test_details": str(data.get("lab_test_details", "")).strip(),
+        "evidence_type": str(data.get("evidence_type", "")).strip(),
         "warnings": warnings,
     }
 
 
 def _combine_confidence(ai_confidence: float, image_quality_score: float) -> float:
-    """
-    Final confidence combines model confidence and image quality.
-    AI confidence is more important, but poor camera image quality should reduce final confidence.
-    """
     combined = (ai_confidence * 0.75) + (image_quality_score * 0.25)
     return round(max(0.0, min(1.0, combined)), 3)
+
+
+def _normalize_label(value: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", value.lower())
+
+
+def _normalize_ocr_spacing(text: str) -> str:
+    """
+    Fix OCR output where labels may be spaced or stylized.
+    Example: P A T I E N T  N A M E -> PATIENT NAME
+    """
+    replacements = {
+        r"P\s*A\s*T\s*I\s*E\s*N\s*T\s+N\s*A\s*M\s*E": "PATIENT NAME",
+        r"P\s*A\s*T\s*I\s*E\s*N\s*T\s+I\s*D": "PATIENT ID",
+        r"C\s*O\s*N\s*D\s*I\s*T\s*I\s*O\s*N": "CONDITION",
+        r"H\s*O\s*S\s*P\s*I\s*T\s*A\s*L": "HOSPITAL",
+        r"P\s*L\s*A\s*C\s*E": "PLACE",
+        r"S\s*E\s*V\s*E\s*R\s*I\s*T\s*Y": "SEVERITY",
+        r"D\s*A\s*T\s*E": "DATE",
+        r"E\s*X\s*A\s*M\s*I\s*N\s*A\s*T\s*I\s*O\s*N": "EXAMINATION",
+        r"O\s*X\s*Y\s*G\s*E\s*N\s+S\s*A\s*T": "OXYGEN SAT",
+        r"P\s*E\s*A\s*K\s+F\s*L\s*O\s*W": "PEAK FLOW",
+        r"R\s*E\s*S\s*P\s*\.?\s*R\s*A\s*T\s*E": "RESP. RATE",
+    }
+
+    fixed = text
+
+    for pattern, replacement in replacements.items():
+        fixed = re.sub(pattern, replacement, fixed, flags=re.IGNORECASE)
+
+    return fixed
+
+
+def _build_stop_pattern(exclude_labels: list[str]) -> str:
+    excluded = {_normalize_label(item) for item in exclude_labels}
+
+    stop_labels = [
+        label
+        for label in STOP_LABELS
+        if _normalize_label(label) not in excluded
+    ]
+
+    return "|".join(re.escape(label) for label in stop_labels)
+
+
+def _extract_between_labels(text: str, labels: list[str]) -> str:
+    """
+    Handles continuous OCR text:
+    PATIENT NAME Mohamed Rizwan PATIENT ID BT-RAD-5562
+    """
+    fixed = _normalize_ocr_spacing(text)
+    fixed = re.sub(r"[ \t]+", " ", fixed)
+    fixed = re.sub(r"\n+", "\n", fixed)
+
+    for label in labels:
+        stop_pattern = _build_stop_pattern([label])
+
+        patterns = [
+            rf"{re.escape(label)}\s*[:\-]\s*(.+?)(?=\s+(?:{stop_pattern})\b|$)",
+            rf"{re.escape(label)}\s+(.+?)(?=\s+(?:{stop_pattern})\b|$)",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, fixed, flags=re.IGNORECASE | re.DOTALL)
+
+            if match:
+                value = re.sub(r"\s+", " ", match.group(1)).strip()
+
+                if value:
+                    return value
+
+    return ""
+
+
+def _extract_from_line_or_next_line(text: str, labels: list[str]) -> str:
+    """
+    Handles:
+    PATIENT NAME
+    Mohamed Rizwan
+    """
+    fixed = _normalize_ocr_spacing(text)
+    lines = [line.strip() for line in fixed.splitlines() if line.strip()]
+
+    stop_norms = {_normalize_label(label) for label in STOP_LABELS}
+
+    for index, line in enumerate(lines):
+        line_norm = _normalize_label(line)
+
+        for label in labels:
+            label_norm = _normalize_label(label)
+
+            if line_norm == label_norm:
+                for next_line in lines[index + 1 :]:
+                    next_norm = _normalize_label(next_line)
+
+                    if next_norm in stop_norms:
+                        break
+
+                    if next_line:
+                        return next_line.strip()
+
+            same_line = re.search(
+                rf"^\s*{re.escape(label)}\s*[:\-]\s*(.+)$",
+                line,
+                flags=re.IGNORECASE,
+            )
+
+            if same_line:
+                return same_line.group(1).strip()
+
+    return ""
+
+
+def _extract_value_from_page_text(text: str, field_name: str) -> str:
+    labels = FIELD_ALIASES.get(field_name, [])
+
+    if not labels:
+        return ""
+
+    return (
+        _extract_from_line_or_next_line(text, labels)
+        or _extract_between_labels(text, labels)
+    )
+
+
+def _extract_section_from_page_text(text: str, field_name: str) -> str:
+    labels = FIELD_ALIASES.get(field_name, [])
+    fixed = _normalize_ocr_spacing(text)
+    lines = [line.strip() for line in fixed.splitlines() if line.strip()]
+    stop_norms = {_normalize_label(label) for label in STOP_LABELS}
+
+    for index, line in enumerate(lines):
+        line_norm = _normalize_label(line)
+
+        for label in labels:
+            if line_norm == _normalize_label(label):
+                collected: list[str] = []
+
+                for next_line in lines[index + 1 :]:
+                    next_norm = _normalize_label(next_line)
+
+                    if next_norm in stop_norms:
+                        break
+
+                    collected.append(next_line)
+
+                if collected:
+                    return " ".join(collected).strip()
+
+    return _extract_between_labels(text, labels)
+
+
+def _fill_missing_fields_from_page_text(data: dict[str, Any]) -> dict[str, Any]:
+    """
+    If the AI returns page_text but misses structured fields, extract fields from page_text.
+    This is important for direct PNG files and designed report layouts.
+    """
+    page_text = data.get("page_text", "") or ""
+
+    for field_name in [
+        "patient_name",
+        "medical_condition",
+        "incident_date",
+        "hospital_location",
+        "severity_level",
+    ]:
+        if not data.get(field_name):
+            value = _extract_value_from_page_text(page_text, field_name)
+
+            if field_name == "severity_level":
+                value = _safe_severity(value)
+
+            if value:
+                data[field_name] = value
+
+    if not data.get("doctor_notes"):
+        notes = _extract_section_from_page_text(page_text, "doctor_notes")
+        if notes:
+            data["doctor_notes"] = notes
+
+    if not data.get("lab_test_details"):
+        lab_details = _extract_section_from_page_text(page_text, "lab_test_details")
+        if lab_details:
+            data["lab_test_details"] = lab_details
+
+    return data
 
 
 class AiOcrService:
@@ -147,6 +431,7 @@ class AiOcrService:
 
         if suffix == ".txt":
             text = Path(file_path).read_text(encoding="utf-8", errors="ignore")
+
             page = PageOcrResult(
                 page_number=1,
                 page_text=text,
@@ -265,20 +550,81 @@ class AiOcrService:
                 "deskew_angle": 0.0,
             }
 
-        data_url = _image_to_data_url(image_for_ocr)
+        preprocessed_result = self._run_ai_ocr_on_image(
+            image=image_for_ocr,
+            page_number=page_number,
+            preprocessing_metadata=preprocessing_metadata,
+            preprocessing_warnings=preprocessing_warnings,
+        )
+
+        if (
+            preprocessed_result.confidence < settings.min_ocr_confidence
+            or self._has_missing_important_fields(preprocessed_result)
+        ):
+            original_result = self._run_ai_ocr_on_image(
+                image=image,
+                page_number=page_number,
+                preprocessing_metadata={
+                    "page_number": page_number,
+                    "quality_score": 1.0,
+                    "final_blur_score": None,
+                    "was_cropped": False,
+                    "was_deskewed": False,
+                    "deskew_angle": 0.0,
+                    "used_original_retry": True,
+                },
+                preprocessing_warnings=[
+                    "OCR retried with original image because preprocessed OCR had low confidence or missing important fields."
+                ],
+            )
+
+            return self._choose_better_ocr_result(
+                first_result=preprocessed_result,
+                second_result=original_result,
+            )
+
+        return preprocessed_result
+
+    def _run_ai_ocr_on_image(
+        self,
+        image: Image.Image,
+        page_number: int,
+        preprocessing_metadata: dict[str, Any],
+        preprocessing_warnings: list[str],
+    ) -> PageOcrResult:
+        data_url = _image_to_data_url(image)
 
         prompt = """
-You are an AI medical investigation document understanding system.
+You are an AI medical investigation OCR and document understanding system.
 
-Your task:
-1. Read the uploaded medical investigation page.
-2. Extract all readable text.
-3. Understand the document structure.
-4. Handle handwriting, low-quality scans, mixed layouts, tables, stamps, and doctor notes.
-5. Extract meaningful medical investigation information.
-6. Do not guess missing values.
+Read the uploaded medical investigation page carefully.
 
-Return ONLY valid JSON with this exact structure:
+Important:
+- Extract all visible text.
+- Many labels are written in uppercase.
+- Some labels and values are in two-column layouts.
+- Some labels are on one line and the value is on the next line.
+- Do not ignore fields just because they are in a designed card layout.
+- If a value is visible near a label, extract it.
+
+Field mapping:
+- PATIENT NAME -> patient_name
+- PATIENT / PT NAME -> patient_name
+- DATE -> incident_date
+- HOSPITAL -> hospital_location
+- PLACE -> hospital_location
+- LOCATION -> hospital_location
+- CONDITION -> medical_condition
+- DIAGNOSIS -> medical_condition
+- SEVERITY -> severity_level
+- DOCTOR NOTES -> doctor_notes
+- LAB/TEST DETAILS -> lab_test_details
+- INVESTIGATION DETAILS -> lab_test_details
+- RADIOLOGY FINDINGS -> lab_test_details
+- EXAMINATION -> lab_test_details
+- PEAK FLOW, OXYGEN SAT, RESP. RATE, BLOOD PRESSURE, TROPONIN I -> lab_test_details
+
+Return ONLY valid JSON:
 {
   "page_text": "",
   "confidence": 0.0,
@@ -295,11 +641,11 @@ Return ONLY valid JSON with this exact structure:
 }
 
 Rules:
+- Do not guess missing values.
+- If a field is clearly visible, extract it.
 - confidence must be between 0 and 1.
 - severity_level must be one of: Low, Medium, High, Critical, Unknown.
-- Use empty string for unavailable fields.
-- Add warnings for unclear handwriting, low-quality image, missing fields, or uncertain extraction.
-- Never invent patient names, diagnoses, hospitals, dates, or lab results.
+- Add warnings only when text is unclear or uncertain.
 """.strip()
 
         response = self.client.chat.completions.create(
@@ -329,14 +675,16 @@ Rules:
 
         raw = _chat_response_text(response)
         data = _normalize_ocr_data(_extract_json(raw))
+        data = _fill_missing_fields_from_page_text(data)
 
         quality_score = float(preprocessing_metadata.get("quality_score", 1.0))
+
         combined_confidence = _combine_confidence(
             ai_confidence=data["confidence"],
             image_quality_score=quality_score,
         )
 
-        warnings = []
+        warnings: list[str] = []
         warnings.extend(preprocessing_warnings)
         warnings.extend(data["warnings"])
 
@@ -375,6 +723,48 @@ Rules:
             warnings=warnings,
             metadata=metadata,
         )
+
+    def _has_missing_important_fields(self, result: PageOcrResult) -> bool:
+        important_fields = [
+            "patient_name",
+            "medical_condition",
+            "incident_date",
+            "hospital_location",
+        ]
+
+        return any(not result.fields.get(field) for field in important_fields)
+
+    def _field_count(self, result: PageOcrResult) -> int:
+        fields = [
+            "patient_name",
+            "medical_condition",
+            "incident_date",
+            "hospital_location",
+            "severity_level",
+            "doctor_notes",
+            "lab_test_details",
+        ]
+
+        return sum(1 for field in fields if result.fields.get(field))
+
+    def _choose_better_ocr_result(
+        self,
+        first_result: PageOcrResult,
+        second_result: PageOcrResult,
+    ) -> PageOcrResult:
+        first_score = self._field_count(first_result) + first_result.confidence
+        second_score = self._field_count(second_result) + second_result.confidence
+
+        if second_score > first_score:
+            second_result.warnings.append(
+                "Original image OCR selected because it extracted more fields or had better confidence."
+            )
+            return second_result
+
+        first_result.warnings.append(
+            "Preprocessed image OCR selected because it extracted more fields or had better confidence."
+        )
+        return first_result
 
 
 ai_ocr_service = AiOcrService()
