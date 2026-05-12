@@ -52,6 +52,10 @@ FIELD_ALIASES = {
         "Date of Investigation",
         "Investigation Date",
         "Report Date",
+        "Collection Date",
+        "Ordering Date/Time",
+        "Test Date/Time",
+        "Print Date/Time",
     ],
     "hospital_location": [
         "Hospital / Location",
@@ -59,6 +63,8 @@ FIELD_ALIASES = {
         "Location",
         "Place",
         "Facility",
+        "Lab",
+        "Laboratory",
     ],
     "severity_level": [
         "Severity Level",
@@ -70,6 +76,8 @@ FIELD_ALIASES = {
         "Doctor Note",
         "Clinical Notes",
         "Doctor Remarks",
+        "Physician",
+        "Comment",
     ],
     "lab_test_details": [
         "Lab/Test Details",
@@ -77,6 +85,11 @@ FIELD_ALIASES = {
         "Test Details",
         "Investigation Details",
         "Test Results",
+        "Test Type",
+        "Chemistry",
+        "Result",
+        "Unit",
+        "Ref Range",
         "Examination",
         "Radiology Findings",
         "Peak Flow",
@@ -84,6 +97,14 @@ FIELD_ALIASES = {
         "Resp. Rate",
         "Blood Pressure",
         "Troponin I",
+        "A/G",
+        "CREA",
+        "Uric Acid",
+        "UREA",
+        "CRP",
+        "Sample ID",
+        "Sample Type",
+        "Department",
     ],
 }
 
@@ -94,15 +115,24 @@ STOP_LABELS = [
     "Patient ID",
     "Pt Name",
     "Name",
+    "Age",
+    "Gender",
     "Date",
     "Date of Investigation",
     "Investigation Date",
     "Report Date",
+    "Collection Date",
+    "Collection Time",
+    "Ordering Date/Time",
+    "Test Date/Time",
+    "Print Date/Time",
     "Hospital / Location",
     "Hospital",
     "Location",
     "Place",
     "Facility",
+    "Lab",
+    "Laboratory",
     "Condition",
     "Medical Condition",
     "Diagnosis",
@@ -126,7 +156,27 @@ STOP_LABELS = [
     "Troponin I",
     "Peak Flow",
     "Resp. Rate",
+    "Sample ID",
+    "Sample Type",
+    "Department",
+    "Comment",
+    "Chemistry",
+    "Result",
+    "Flag",
+    "Ref Range",
+    "MLT",
+    "Review Officer",
 ]
+
+
+FORBIDDEN_EXAMPLE_VALUES = {
+    "john doe",
+    "jane doe",
+    "john silva",
+    "sample patient",
+    "test patient",
+    "example patient",
+}
 
 
 def _image_to_data_url(image: Image.Image, image_format: str = "PNG") -> str:
@@ -202,6 +252,56 @@ def _safe_severity(value: Any) -> str:
     return severity_map.get(severity.lower(), "Unknown")
 
 
+def _normalize_label(value: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", value.lower())
+
+
+def _normalize_support_text(value: str) -> str:
+    return "".join(ch.lower() for ch in str(value or "") if ch.isalnum())
+
+
+def _is_forbidden_example_value(value: str) -> bool:
+    return str(value or "").strip().lower() in FORBIDDEN_EXAMPLE_VALUES
+
+
+def _is_value_supported_by_text(page_text: str, value: str | None) -> bool:
+    if not value:
+        return True
+
+    value = str(value).strip()
+
+    if value.lower() in {"unknown", "not available", "n/a", "-"}:
+        return True
+
+    normalized_text = _normalize_support_text(page_text)
+    normalized_value = _normalize_support_text(value)
+
+    if not normalized_value:
+        return True
+
+    return normalized_value in normalized_text
+
+
+def _looks_like_lab_report(text: str) -> bool:
+    normalized = text.lower()
+
+    lab_keywords = [
+        "department of biochemistry",
+        "chemistry",
+        "sample id",
+        "sample type",
+        "serum",
+        "crea",
+        "uric acid",
+        "urea",
+        "crp",
+        "ref range",
+        "collection date",
+    ]
+
+    return any(keyword in normalized for keyword in lab_keywords)
+
+
 def _normalize_ocr_data(data: dict[str, Any]) -> dict[str, Any]:
     warnings = data.get("warnings", [])
 
@@ -236,15 +336,7 @@ def _combine_confidence(ai_confidence: float, image_quality_score: float) -> flo
     return round(max(0.0, min(1.0, combined)), 3)
 
 
-def _normalize_label(value: str) -> str:
-    return re.sub(r"[^a-z0-9]", "", value.lower())
-
-
 def _normalize_ocr_spacing(text: str) -> str:
-    """
-    Fix OCR output where labels may be spaced or stylized.
-    Example: P A T I E N T  N A M E -> PATIENT NAME
-    """
     replacements = {
         r"P\s*A\s*T\s*I\s*E\s*N\s*T\s+N\s*A\s*M\s*E": "PATIENT NAME",
         r"P\s*A\s*T\s*I\s*E\s*N\s*T\s+I\s*D": "PATIENT ID",
@@ -253,6 +345,7 @@ def _normalize_ocr_spacing(text: str) -> str:
         r"P\s*L\s*A\s*C\s*E": "PLACE",
         r"S\s*E\s*V\s*E\s*R\s*I\s*T\s*Y": "SEVERITY",
         r"D\s*A\s*T\s*E": "DATE",
+        r"C\s*O\s*L\s*L\s*E\s*C\s*T\s*I\s*O\s*N\s+D\s*A\s*T\s*E": "COLLECTION DATE",
         r"E\s*X\s*A\s*M\s*I\s*N\s*A\s*T\s*I\s*O\s*N": "EXAMINATION",
         r"O\s*X\s*Y\s*G\s*E\s*N\s+S\s*A\s*T": "OXYGEN SAT",
         r"P\s*E\s*A\s*K\s+F\s*L\s*O\s*W": "PEAK FLOW",
@@ -280,10 +373,6 @@ def _build_stop_pattern(exclude_labels: list[str]) -> str:
 
 
 def _extract_between_labels(text: str, labels: list[str]) -> str:
-    """
-    Handles continuous OCR text:
-    PATIENT NAME Mohamed Rizwan PATIENT ID BT-RAD-5562
-    """
     fixed = _normalize_ocr_spacing(text)
     fixed = re.sub(r"[ \t]+", " ", fixed)
     fixed = re.sub(r"\n+", "\n", fixed)
@@ -309,11 +398,6 @@ def _extract_between_labels(text: str, labels: list[str]) -> str:
 
 
 def _extract_from_line_or_next_line(text: str, labels: list[str]) -> str:
-    """
-    Handles:
-    PATIENT NAME
-    Mohamed Rizwan
-    """
     fixed = _normalize_ocr_spacing(text)
     lines = [line.strip() for line in fixed.splitlines() if line.strip()]
 
@@ -386,11 +470,80 @@ def _extract_section_from_page_text(text: str, field_name: str) -> str:
     return _extract_between_labels(text, labels)
 
 
+def _extract_lab_results_from_page_text(text: str) -> str:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    keywords = [
+        "A/G",
+        "CREA",
+        "Uric Acid",
+        "UREA",
+        "CRP",
+        "Sample ID",
+        "Sample Type",
+        "Collection Date",
+        "Collection Time",
+        "Department",
+        "Comment",
+        "Ordering Date/Time",
+        "Test Date/Time",
+        "Print Date/Time",
+    ]
+
+    collected: list[str] = []
+
+    for line in lines:
+        if any(keyword.lower() in line.lower() for keyword in keywords):
+            collected.append(line)
+
+    return " | ".join(collected).strip()
+
+
+def _clean_unsupported_or_fake_fields(data: dict[str, Any]) -> dict[str, Any]:
+    page_text = data.get("page_text", "") or ""
+    warnings = data.get("warnings", [])
+
+    if not isinstance(warnings, list):
+        warnings = [str(warnings)]
+
+    for field_name in [
+        "patient_name",
+        "medical_condition",
+        "incident_date",
+        "hospital_location",
+    ]:
+        value = data.get(field_name)
+
+        if value and _is_forbidden_example_value(value):
+            data[field_name] = ""
+            warnings.append(
+                f"Cleared unsupported example value from {field_name}: {value}"
+            )
+            continue
+
+        if value and not _is_value_supported_by_text(page_text, value):
+            data[field_name] = ""
+            warnings.append(
+                f"Cleared unsupported OCR field because it was not found in visible OCR text: {field_name}"
+            )
+
+    if _looks_like_lab_report(page_text):
+        condition = str(data.get("medical_condition", "") or "").strip()
+
+        # A lab report usually does not contain a diagnosis. Do not infer one from chemistry values.
+        if condition and not _is_value_supported_by_text(page_text, condition):
+            data["medical_condition"] = ""
+            warnings.append(
+                "Cleared inferred medical_condition because lab report does not explicitly show a diagnosis."
+            )
+
+        if data.get("severity_level") not in {"Low", "Medium", "High", "Critical"}:
+            data["severity_level"] = "Unknown"
+
+    data["warnings"] = list(dict.fromkeys(warnings))
+    return data
+
+
 def _fill_missing_fields_from_page_text(data: dict[str, Any]) -> dict[str, Any]:
-    """
-    If the AI returns page_text but misses structured fields, extract fields from page_text.
-    This is important for direct PNG files and designed report layouts.
-    """
     page_text = data.get("page_text", "") or ""
 
     for field_name in [
@@ -415,9 +568,14 @@ def _fill_missing_fields_from_page_text(data: dict[str, Any]) -> dict[str, Any]:
             data["doctor_notes"] = notes
 
     if not data.get("lab_test_details"):
-        lab_details = _extract_section_from_page_text(page_text, "lab_test_details")
+        lab_details = (
+            _extract_section_from_page_text(page_text, "lab_test_details")
+            or _extract_lab_results_from_page_text(page_text)
+        )
         if lab_details:
             data["lab_test_details"] = lab_details
+
+    data = _clean_unsupported_or_fake_fields(data)
 
     return data
 
@@ -595,34 +753,33 @@ class AiOcrService:
         data_url = _image_to_data_url(image)
 
         prompt = """
-You are an AI medical investigation OCR and document understanding system.
+You are a strict OCR engine for medical investigation documents.
 
-Read the uploaded medical investigation page carefully.
+Your job is to TRANSCRIBE ONLY visible text from the uploaded image and extract fields only when the value is visibly present.
 
-Important:
-- Extract all visible text.
-- Many labels are written in uppercase.
+Critical safety rules:
+- Do not invent any patient name, hospital, diagnosis, doctor note, date, lab result, or condition.
+- Do not use example names such as John Doe, Jane Doe, John Silva, or sample patient data.
+- Do not infer a diagnosis from lab values.
+- If the document is a laboratory report and no diagnosis is explicitly written, set medical_condition to an empty string.
+- If severity is not explicitly visible, set severity_level to "Unknown".
+- If a field is not visible, leave it empty.
+- Copy visible words exactly as they appear as much as possible.
+- If the image is unclear, add a warning instead of guessing.
+
+Important layouts:
+- Some labels are on one line and values are on the next line.
 - Some labels and values are in two-column layouts.
-- Some labels are on one line and the value is on the next line.
-- Do not ignore fields just because they are in a designed card layout.
-- If a value is visible near a label, extract it.
+- Some medical forms are camera photos and may be slightly tilted.
 
 Field mapping:
-- PATIENT NAME -> patient_name
-- PATIENT / PT NAME -> patient_name
-- DATE -> incident_date
-- HOSPITAL -> hospital_location
-- PLACE -> hospital_location
-- LOCATION -> hospital_location
-- CONDITION -> medical_condition
-- DIAGNOSIS -> medical_condition
-- SEVERITY -> severity_level
-- DOCTOR NOTES -> doctor_notes
-- LAB/TEST DETAILS -> lab_test_details
-- INVESTIGATION DETAILS -> lab_test_details
-- RADIOLOGY FINDINGS -> lab_test_details
-- EXAMINATION -> lab_test_details
-- PEAK FLOW, OXYGEN SAT, RESP. RATE, BLOOD PRESSURE, TROPONIN I -> lab_test_details
+- PATIENT NAME / PATIENT / PT NAME -> patient_name
+- DATE / COLLECTION DATE / TEST DATE/TIME / ORDERING DATE/TIME -> incident_date
+- HOSPITAL / PLACE / LOCATION / LAB / LABORATORY -> hospital_location
+- CONDITION / DIAGNOSIS -> medical_condition only if explicitly visible
+- SEVERITY / RISK LEVEL -> severity_level
+- DOCTOR NOTES / COMMENT / PHYSICIAN -> doctor_notes
+- LAB/TEST DETAILS / TEST RESULTS / CHEMISTRY / RESULT / A/G / CREA / Uric Acid / UREA / CRP / Sample ID / Sample Type -> lab_test_details
 
 Return ONLY valid JSON:
 {
@@ -641,11 +798,10 @@ Return ONLY valid JSON:
 }
 
 Rules:
-- Do not guess missing values.
-- If a field is clearly visible, extract it.
 - confidence must be between 0 and 1.
 - severity_level must be one of: Low, Medium, High, Critical, Unknown.
-- Add warnings only when text is unclear or uncertain.
+- Never guess missing values.
+- Never use any fake/example patient data.
 """.strip()
 
         response = self.client.chat.completions.create(
@@ -653,7 +809,7 @@ Rules:
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a careful AI OCR and medical document extraction assistant.",
+                    "content": "You are a strict OCR engine. You only transcribe visible text and never invent values.",
                 },
                 {
                     "role": "user",
@@ -727,7 +883,6 @@ Rules:
     def _has_missing_important_fields(self, result: PageOcrResult) -> bool:
         important_fields = [
             "patient_name",
-            "medical_condition",
             "incident_date",
             "hospital_location",
         ]

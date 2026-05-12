@@ -10,10 +10,8 @@ from app.services.ocr import DocumentOcrResult
 
 IMPORTANT_FIELDS = [
     "patient_name",
-    "medical_condition",
     "incident_date",
     "hospital_location",
-    "severity_level",
 ]
 
 
@@ -36,6 +34,10 @@ FIELD_ALIASES = {
         "Date of Investigation",
         "Investigation Date",
         "Report Date",
+        "Collection Date",
+        "Ordering Date/Time",
+        "Test Date/Time",
+        "Print Date/Time",
     ],
     "hospital_location": [
         "Hospital / Location",
@@ -43,6 +45,8 @@ FIELD_ALIASES = {
         "Location",
         "Place",
         "Facility",
+        "Lab",
+        "Laboratory",
     ],
     "severity_level": [
         "Severity Level",
@@ -54,6 +58,9 @@ FIELD_ALIASES = {
         "Doctor Note",
         "Clinical Notes",
         "Doctor Remarks",
+        "Medical Notes",
+        "Physician",
+        "Comment",
     ],
     "lab_test_details": [
         "Lab/Test Details",
@@ -61,8 +68,26 @@ FIELD_ALIASES = {
         "Test Details",
         "Investigation Details",
         "Test Results",
+        "Test Type",
+        "Chemistry",
+        "Result",
+        "Unit",
+        "Ref Range",
         "Examination",
         "Radiology Findings",
+        "Peak Flow",
+        "Oxygen Sat",
+        "Resp. Rate",
+        "Blood Pressure",
+        "Troponin I",
+        "A/G",
+        "CREA",
+        "Uric Acid",
+        "UREA",
+        "CRP",
+        "Sample ID",
+        "Sample Type",
+        "Department",
     ],
     "summary": [
         "Summary",
@@ -78,19 +103,30 @@ STOP_LABELS = [
     "Patient ID",
     "Pt Name",
     "Name",
+    "Age",
+    "Gender",
     "Date",
     "Date of Investigation",
     "Investigation Date",
     "Report Date",
+    "Collection Date",
+    "Collection Time",
+    "Ordering Date/Time",
+    "Test Date/Time",
+    "Print Date/Time",
     "Hospital / Location",
     "Hospital",
     "Location",
     "Place",
+    "Facility",
+    "Lab",
+    "Laboratory",
     "Condition",
     "Medical Condition",
     "Diagnosis",
     "Severity",
     "Severity Level",
+    "Risk Level",
     "Oxygen Sat",
     "Oxygen Sat.",
     "Examination",
@@ -101,6 +137,48 @@ STOP_LABELS = [
     "Doctor Note",
     "Summary",
     "Investigation Summary",
+    "Clinical Findings",
+    "Treatment Advice",
+    "Recommended Action",
+    "Sample ID",
+    "Sample Type",
+    "Department",
+    "Comment",
+    "Chemistry",
+    "Result",
+    "Flag",
+    "Ref Range",
+    "MLT",
+    "Review Officer",
+]
+
+
+FORBIDDEN_EXAMPLE_VALUES = {
+    "john doe",
+    "jane doe",
+    "john silva",
+    "sample patient",
+    "test patient",
+    "example patient",
+}
+
+
+LAB_REPORT_KEYWORDS = [
+    "department of biochemistry",
+    "biochemistry",
+    "chemistry",
+    "sample id",
+    "sample type",
+    "serum",
+    "crea",
+    "uric acid",
+    "urea",
+    "crp",
+    "ref range",
+    "collection date",
+    "test date/time",
+    "ordering date/time",
+    "print date/time",
 ]
 
 
@@ -111,7 +189,41 @@ def _safe_string(value: Any) -> str:
 
 
 def _normalize_label(value: str) -> str:
-    return re.sub(r"[^a-z0-9]", "", value.lower())
+    return re.sub(r"[^a-z0-9]", "", str(value).lower())
+
+
+def _normalize_support_text(value: str) -> str:
+    return "".join(ch.lower() for ch in str(value or "") if ch.isalnum())
+
+
+def _is_forbidden_example_value(value: str | None) -> bool:
+    if not value:
+        return False
+
+    return str(value).strip().lower() in FORBIDDEN_EXAMPLE_VALUES
+
+
+def _is_supported_by_text(text: str, value: str | None) -> bool:
+    if not value:
+        return True
+
+    value = str(value).strip()
+
+    if value.lower() in {"unknown", "not available", "n/a", "-"}:
+        return True
+
+    normalized_text = _normalize_support_text(text)
+    normalized_value = _normalize_support_text(value)
+
+    if not normalized_value:
+        return True
+
+    return normalized_value in normalized_text
+
+
+def _looks_like_lab_report(text: str) -> bool:
+    lower_text = str(text or "").lower()
+    return any(keyword in lower_text for keyword in LAB_REPORT_KEYWORDS)
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -138,28 +250,20 @@ def _chat_response_text(response: Any) -> str:
         return ""
 
 
-def _first_non_empty(page_fields: list[dict[str, Any]], key: str) -> str:
-    for fields in page_fields:
-        value = fields.get(key)
-        if value:
-            return str(value).strip()
-    return ""
-
-
 def _normalize_ocr_spacing(text: str) -> str:
-    """
-    Fix OCR output where labels may be spaced like:
-    P A T I E N T  N A M E
-    """
     replacements = {
         r"P\s*A\s*T\s*I\s*E\s*N\s*T\s+N\s*A\s*M\s*E": "PATIENT NAME",
         r"P\s*A\s*T\s*I\s*E\s*N\s*T\s+I\s*D": "PATIENT ID",
         r"C\s*O\s*N\s*D\s*I\s*T\s*I\s*O\s*N": "CONDITION",
         r"H\s*O\s*S\s*P\s*I\s*T\s*A\s*L": "HOSPITAL",
+        r"P\s*L\s*A\s*C\s*E": "PLACE",
         r"S\s*E\s*V\s*E\s*R\s*I\s*T\s*Y": "SEVERITY",
         r"D\s*A\s*T\s*E": "DATE",
+        r"C\s*O\s*L\s*L\s*E\s*C\s*T\s*I\s*O\s*N\s+D\s*A\s*T\s*E": "COLLECTION DATE",
         r"E\s*X\s*A\s*M\s*I\s*N\s*A\s*T\s*I\s*O\s*N": "EXAMINATION",
         r"O\s*X\s*Y\s*G\s*E\s*N\s+S\s*A\s*T": "OXYGEN SAT",
+        r"P\s*E\s*A\s*K\s+F\s*L\s*O\s*W": "PEAK FLOW",
+        r"R\s*E\s*S\s*P\s*\.?\s*R\s*A\s*T\s*E": "RESP. RATE",
     }
 
     fixed = text
@@ -171,27 +275,19 @@ def _normalize_ocr_spacing(text: str) -> str:
 
 
 def _build_stop_pattern(exclude_labels: list[str]) -> str:
+    excluded = {_normalize_label(item) for item in exclude_labels}
+
     stop_labels = [
-        label
-        for label in STOP_LABELS
-        if _normalize_label(label) not in {_normalize_label(item) for item in exclude_labels}
+        label for label in STOP_LABELS if _normalize_label(label) not in excluded
     ]
 
-    escaped = [re.escape(label) for label in stop_labels]
-    return "|".join(escaped)
+    return "|".join(re.escape(label) for label in stop_labels)
 
 
-def _extract_between_labels(text: str, labels: list[str]) -> str:
-    """
-    Extract values from continuous OCR text.
-
-    Example:
-    PATIENT NAME Mohamed Rizwan PATIENT ID BT-RAD-5562
-    returns Mohamed Rizwan
-    """
-    normalized_text = _normalize_ocr_spacing(text)
-    normalized_text = re.sub(r"[ \t]+", " ", normalized_text)
-    normalized_text = re.sub(r"\n+", "\n", normalized_text)
+def _value_between_labels(text: str, labels: list[str]) -> str:
+    fixed = _normalize_ocr_spacing(text)
+    fixed = re.sub(r"[ \t]+", " ", fixed)
+    fixed = re.sub(r"\n+", "\n", fixed)
 
     for label in labels:
         stop_pattern = _build_stop_pattern([label])
@@ -202,12 +298,10 @@ def _extract_between_labels(text: str, labels: list[str]) -> str:
         ]
 
         for pattern in patterns:
-            match = re.search(pattern, normalized_text, flags=re.IGNORECASE | re.DOTALL)
+            match = re.search(pattern, fixed, flags=re.IGNORECASE | re.DOTALL)
 
             if match:
-                value = match.group(1).strip()
-                value = re.sub(r"\s+", " ", value)
-
+                value = re.sub(r"\s+", " ", match.group(1)).strip()
                 if value:
                     return value
 
@@ -215,10 +309,9 @@ def _extract_between_labels(text: str, labels: list[str]) -> str:
 
 
 def _value_from_line_or_next_line(text: str, labels: list[str]) -> str:
-    fixed_text = _normalize_ocr_spacing(text)
-    lines = [line.strip() for line in fixed_text.splitlines() if line.strip()]
+    fixed = _normalize_ocr_spacing(text)
+    lines = [line.strip() for line in fixed.splitlines() if line.strip()]
 
-    label_norms = {_normalize_label(label) for label in labels}
     stop_norms = {_normalize_label(label) for label in STOP_LABELS}
 
     for index, line in enumerate(lines):
@@ -227,7 +320,6 @@ def _value_from_line_or_next_line(text: str, labels: list[str]) -> str:
         for label in labels:
             label_norm = _normalize_label(label)
 
-            # Label exactly on one line, value on next line
             if line_norm == label_norm:
                 for next_line in lines[index + 1 :]:
                     next_norm = _normalize_label(next_line)
@@ -238,12 +330,12 @@ def _value_from_line_or_next_line(text: str, labels: list[str]) -> str:
                     if next_line:
                         return next_line.strip()
 
-            # Same line with colon
             same_line = re.search(
                 rf"^\s*{re.escape(label)}\s*[:\-]\s*(.+)$",
                 line,
                 flags=re.IGNORECASE,
             )
+
             if same_line:
                 return same_line.group(1).strip()
 
@@ -251,15 +343,14 @@ def _value_from_line_or_next_line(text: str, labels: list[str]) -> str:
 
 
 def _value_from_label(text: str, labels: list[str]) -> str:
-    return (
-        _value_from_line_or_next_line(text, labels)
-        or _extract_between_labels(text, labels)
+    return _value_from_line_or_next_line(text, labels) or _value_between_labels(
+        text, labels
     )
 
 
 def _section_from_heading(text: str, headings: list[str]) -> str:
-    fixed_text = _normalize_ocr_spacing(text)
-    lines = [line.strip() for line in fixed_text.splitlines() if line.strip()]
+    fixed = _normalize_ocr_spacing(text)
+    lines = [line.strip() for line in fixed.splitlines() if line.strip()]
     stop_norms = {_normalize_label(label) for label in STOP_LABELS}
 
     for index, line in enumerate(lines):
@@ -279,7 +370,27 @@ def _section_from_heading(text: str, headings: list[str]) -> str:
 
                 return " ".join(collected).strip()
 
-    return _extract_between_labels(text, headings)
+    return _value_between_labels(text, headings)
+
+
+def _first_supported_page_field(
+    page_fields: list[dict[str, Any]],
+    key: str,
+    text: str,
+) -> str:
+    for fields in page_fields:
+        value = _safe_string(fields.get(key))
+
+        if not value:
+            continue
+
+        if _is_forbidden_example_value(value):
+            continue
+
+        if _is_supported_by_text(text, value):
+            return value
+
+    return ""
 
 
 def _normalize_severity(value: Any) -> str:
@@ -297,7 +408,81 @@ def _normalize_severity(value: Any) -> str:
     return severity_map.get(severity.lower(), "Unknown")
 
 
-def _normalize_fields(data: dict[str, Any], fallback_confidence: float) -> dict[str, Any]:
+def _extract_lab_location(text: str) -> str:
+    """
+    Handles lab headers like:
+    PATH LAB, DGH - HORANA
+    """
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+
+    for line in lines[:8]:
+        lower_line = line.lower()
+
+        if "lab" in lower_line or "hospital" in lower_line or "dgh" in lower_line:
+            return line
+
+    return ""
+
+
+def _extract_lab_results(text: str) -> str:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+
+    keywords = [
+        "A/G",
+        "CREA",
+        "Uric Acid",
+        "UREA",
+        "CRP",
+        "Sample ID",
+        "Sample Type",
+        "Collection Date",
+        "Collection Time",
+        "Department",
+        "Comment",
+        "Ordering Date/Time",
+        "Test Date/Time",
+        "Print Date/Time",
+        "Chemistry",
+        "Result",
+        "Ref Range",
+    ]
+
+    collected: list[str] = []
+
+    for line in lines:
+        if any(keyword.lower() in line.lower() for keyword in keywords):
+            collected.append(line)
+
+    return " | ".join(collected).strip()
+
+
+def _build_summary(fields: dict[str, Any], text: str) -> str:
+    patient = fields.get("patient_name") or "Unknown patient"
+    condition = fields.get("medical_condition") or "No explicit diagnosis found"
+    location = fields.get("hospital_location") or "Unknown location"
+    date = fields.get("incident_date") or "Unknown date"
+
+    if _looks_like_lab_report(text):
+        return (
+            f"Laboratory report for {patient}. "
+            f"Date: {date}. "
+            f"Location/Lab: {location}. "
+            f"Condition: {condition}."
+        )
+
+    return (
+        f"Medical investigation report for {patient}. "
+        f"Condition: {condition}. "
+        f"Date: {date}. "
+        f"Location: {location}."
+    )
+
+
+def _normalize_fields(
+    data: dict[str, Any],
+    fallback_confidence: float,
+    ocr_text: str,
+) -> dict[str, Any]:
     confidence = data.get("confidence", fallback_confidence)
 
     try:
@@ -312,7 +497,7 @@ def _normalize_fields(data: dict[str, Any], fallback_confidence: float) -> dict[
     if not isinstance(warnings, list):
         warnings = [str(warnings)]
 
-    return {
+    fields = {
         "patient_name": _safe_string(data.get("patient_name")),
         "medical_condition": _safe_string(data.get("medical_condition")),
         "incident_date": _safe_string(data.get("incident_date")),
@@ -325,8 +510,62 @@ def _normalize_fields(data: dict[str, Any], fallback_confidence: float) -> dict[
         "warnings": warnings,
     }
 
+    fields = _clean_unsupported_fields(fields, ocr_text)
 
-def _merge_missing_fields(primary: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
+    if not fields.get("summary"):
+        fields["summary"] = _build_summary(fields, ocr_text)
+
+    return fields
+
+
+def _clean_unsupported_fields(fields: dict[str, Any], ocr_text: str) -> dict[str, Any]:
+    warnings = fields.get("warnings", [])
+
+    if not isinstance(warnings, list):
+        warnings = [str(warnings)]
+
+    for field_name in [
+        "patient_name",
+        "medical_condition",
+        "incident_date",
+        "hospital_location",
+    ]:
+        value = fields.get(field_name)
+
+        if value and _is_forbidden_example_value(str(value)):
+            fields[field_name] = ""
+            warnings.append(
+                f"Cleared forbidden example value from {field_name}: {value}"
+            )
+            continue
+
+        if value and not _is_supported_by_text(ocr_text, str(value)):
+            fields[field_name] = ""
+            warnings.append(
+                f"Cleared unsupported extracted field because it was not found in OCR text: {field_name}"
+            )
+
+    if _looks_like_lab_report(ocr_text):
+        condition = _safe_string(fields.get("medical_condition"))
+
+        if condition and not _is_supported_by_text(ocr_text, condition):
+            fields["medical_condition"] = ""
+            warnings.append(
+                "Cleared inferred medical_condition because the document appears to be a lab report and no diagnosis was explicitly visible."
+            )
+
+        if fields.get("severity_level") not in {"Low", "Medium", "High", "Critical"}:
+            fields["severity_level"] = "Unknown"
+
+    fields["warnings"] = list(dict.fromkeys(warnings))
+    return fields
+
+
+def _merge_missing_fields(
+    primary: dict[str, Any],
+    fallback: dict[str, Any],
+    ocr_text: str,
+) -> dict[str, Any]:
     merged = dict(primary)
 
     for key, fallback_value in fallback.items():
@@ -350,6 +589,11 @@ def _merge_missing_fields(primary: dict[str, Any], fallback: dict[str, Any]) -> 
     if not merged.get("confidence"):
         merged["confidence"] = fallback.get("confidence", 0.0)
 
+    merged = _clean_unsupported_fields(merged, ocr_text)
+
+    if not merged.get("summary"):
+        merged["summary"] = _build_summary(merged, ocr_text)
+
     return merged
 
 
@@ -369,9 +613,19 @@ class StructuredExtractionService:
 
         if self.client:
             try:
-                ai_fields = self._extract_with_ai(text=text, ocr_result=ocr_result)
-                merged_fields = _merge_missing_fields(ai_fields, fallback_fields)
+                ai_fields = self._extract_with_ai(
+                    text=text,
+                    ocr_result=ocr_result,
+                )
+
+                merged_fields = _merge_missing_fields(
+                    primary=ai_fields,
+                    fallback=fallback_fields,
+                    ocr_text=text,
+                )
+
                 return self._add_missing_field_warnings(merged_fields)
+
             except Exception as exc:
                 fallback_fields["warnings"].append(
                     f"AI structured extraction failed. Fallback extraction used. Error: {str(exc)}"
@@ -388,48 +642,51 @@ class StructuredExtractionService:
     ) -> dict[str, Any]:
         fixed_text = _normalize_ocr_spacing(text)
 
+        is_lab_report = _looks_like_lab_report(fixed_text)
+
         patient_name = (
-            _first_non_empty(page_fields, "patient_name")
+            _first_supported_page_field(page_fields, "patient_name", fixed_text)
             or _value_from_label(fixed_text, FIELD_ALIASES["patient_name"])
         )
 
-        medical_condition = (
-            _first_non_empty(page_fields, "medical_condition")
-            or _value_from_label(fixed_text, FIELD_ALIASES["medical_condition"])
-        )
-
         incident_date = (
-            _first_non_empty(page_fields, "incident_date")
+            _first_supported_page_field(page_fields, "incident_date", fixed_text)
             or _value_from_label(fixed_text, FIELD_ALIASES["incident_date"])
         )
 
         hospital_location = (
-            _first_non_empty(page_fields, "hospital_location")
+            _first_supported_page_field(page_fields, "hospital_location", fixed_text)
             or _value_from_label(fixed_text, FIELD_ALIASES["hospital_location"])
+            or _extract_lab_location(fixed_text)
         )
 
-        severity_level = (
-            _first_non_empty(page_fields, "severity_level")
-            or _value_from_label(fixed_text, FIELD_ALIASES["severity_level"])
-            or "Unknown"
-        )
+        if is_lab_report:
+            medical_condition = ""
+            severity_level = "Unknown"
+        else:
+            medical_condition = (
+                _first_supported_page_field(page_fields, "medical_condition", fixed_text)
+                or _value_from_label(fixed_text, FIELD_ALIASES["medical_condition"])
+            )
+
+            severity_level = (
+                _first_supported_page_field(page_fields, "severity_level", fixed_text)
+                or _value_from_label(fixed_text, FIELD_ALIASES["severity_level"])
+                or "Unknown"
+            )
 
         doctor_notes = (
-            _first_non_empty(page_fields, "doctor_notes")
+            _first_supported_page_field(page_fields, "doctor_notes", fixed_text)
             or _section_from_heading(fixed_text, FIELD_ALIASES["doctor_notes"])
         )
 
         lab_test_details = (
-            _first_non_empty(page_fields, "lab_test_details")
+            _first_supported_page_field(page_fields, "lab_test_details", fixed_text)
             or _section_from_heading(fixed_text, FIELD_ALIASES["lab_test_details"])
+            or _extract_lab_results(fixed_text)
         )
 
-        summary = (
-            _section_from_heading(fixed_text, FIELD_ALIASES["summary"])
-            or fixed_text[:500]
-        )
-
-        return {
+        fields = {
             "patient_name": patient_name,
             "medical_condition": medical_condition,
             "incident_date": incident_date,
@@ -437,35 +694,32 @@ class StructuredExtractionService:
             "severity_level": _normalize_severity(severity_level),
             "doctor_notes": doctor_notes,
             "lab_test_details": lab_test_details,
-            "summary": summary,
+            "summary": "",
             "confidence": ocr_result.average_confidence,
             "warnings": list(ocr_result.metadata.get("warnings", [])),
         }
 
+        fields = _clean_unsupported_fields(fields, fixed_text)
+        fields["summary"] = _build_summary(fields, fixed_text)
+
+        return fields
+
     def _extract_with_ai(self, text: str, ocr_result: DocumentOcrResult) -> dict[str, Any]:
         prompt = f"""
-You are extracting structured fields from a medical investigation OCR result.
+You are extracting structured fields from an OCR result of a medical investigation document.
 
-Use only the OCR text provided below.
+Use ONLY the OCR text provided below.
+Do not use outside knowledge.
 Do not guess.
+Do not invent patient names, hospitals, dates, diagnoses, doctor notes, or lab results.
+Never use example names such as John Doe, Jane Doe, John Silva, or sample patient names.
 
-Important layout rule:
-Some documents use labels and values in columns, such as:
-PATIENT NAME
-Mohamed Rizwan
+Important lab report rule:
+If the OCR text appears to be a laboratory report and no diagnosis is explicitly written, set medical_condition to an empty string.
+Do not infer diseases from values such as CRP, UREA, CREA, Uric Acid, glucose, or other lab results.
+If severity is not explicitly written, set severity_level to "Unknown".
 
-or:
-PATIENT NAME Mohamed Rizwan PATIENT ID BT-RAD-5562
-
-Extract the value that follows the label until the next known label.
-
-Map:
-- CONDITION -> medical_condition
-- HOSPITAL -> hospital_location
-- DATE -> incident_date
-- SEVERITY -> severity_level
-
-Return ONLY valid JSON:
+Return ONLY valid JSON with this exact structure:
 {{
   "patient_name": "",
   "medical_condition": "",
@@ -479,6 +733,14 @@ Return ONLY valid JSON:
   "warnings": []
 }}
 
+Field rules:
+- patient_name must appear in OCR text.
+- medical_condition must appear explicitly in OCR text.
+- incident_date must appear in OCR text.
+- hospital_location must appear in OCR text.
+- lab_test_details must be based only on visible OCR text.
+- summary must be based only on visible OCR text.
+
 OCR confidence: {ocr_result.average_confidence}
 
 OCR text:
@@ -490,7 +752,7 @@ OCR text:
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a careful medical investigation structured data extraction assistant.",
+                    "content": "You are a strict medical document extraction assistant. You only extract values supported by OCR text.",
                 },
                 {
                     "role": "user",
@@ -504,7 +766,11 @@ OCR text:
         raw = _chat_response_text(response)
         data = _extract_json(raw)
 
-        return _normalize_fields(data, fallback_confidence=ocr_result.average_confidence)
+        return _normalize_fields(
+            data=data,
+            fallback_confidence=ocr_result.average_confidence,
+            ocr_text=text,
+        )
 
     def _add_missing_field_warnings(self, fields: dict[str, Any]) -> dict[str, Any]:
         warnings = fields.get("warnings", [])
@@ -519,6 +785,11 @@ OCR text:
         if missing_fields:
             warnings.append(
                 f"Important fields missing: {', '.join(missing_fields)}."
+            )
+
+        if not fields.get("medical_condition"):
+            warnings.append(
+                "Medical condition not found explicitly in OCR text."
             )
 
         fields["warnings"] = list(dict.fromkeys(warnings))
